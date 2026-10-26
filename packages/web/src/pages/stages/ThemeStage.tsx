@@ -20,7 +20,7 @@ function ThemeChoices({
     <div className="choice-grid" role="radiogroup" aria-labelledby={labelledBy}>
       {themes.map((t) => (
         <button key={t.id} type="button" role="radio" aria-checked={selected === t.id}
-          className="choice" onClick={() => onChoose(t.id)}
+          className="choice choice-theme" onClick={() => onChoose(t.id)}
           onKeyDown={(e) => {
             const i = themes.findIndex((x) => x.id === t.id);
             const d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
@@ -32,11 +32,12 @@ function ThemeChoices({
           }}
           tabIndex={selected ? (selected === t.id ? 0 : -1) : t.id === fallbackId ? 0 : -1}>
           <span className="check" aria-hidden="true">{selected === t.id ? '✓' : ''}</span>
-          <span>
-            <strong>{t.title}</strong>
-            <br />
-            <span className="muted">{t.blurb}</span>
-            {t.note && <><br /><span className="pill">{t.note}</span></>}
+          <span className="choice-body">
+            <span className="choice-copy">
+              <strong>{t.title}</strong>
+              <span className="muted">{t.blurb}</span>
+            </span>
+            {t.note ? <span className="choice-note">{t.note}</span> : null}
           </span>
         </button>
       ))}

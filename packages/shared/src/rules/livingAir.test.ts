@@ -53,6 +53,14 @@ describe('Living things and air', () => {
     expect(THEMES.map((t) => `${t.title} ${t.blurb} ${t.note ?? ''}`).join('\n')).not.toMatch(HAN);
     expect(isThemeId('light-needed')).toBe(true);
     expect(isThemeId('water-needed')).toBe(false);
+    const note = (id: string) => THEMES.find((t) => t.id === id)?.note ?? '';
+    expect(note('iodine-starch')).toBe('School lab, with your teacher. Practise this before the leaf test.');
+    expect(note('leaf-starch')).toBe('School lab, with your teacher. Heat alcohol only in a hot water bath, with the Bunsen off.');
+    expect(note('oxygen-plant')).toBe('School lab, with your teacher. The glowing splint is a teacher demonstration.');
+    expect(note('light-needed')).toBe('School lab, with your teacher. Your teacher destarches the plant before the lesson. Heat alcohol only in a hot water bath, with the Bunsen off.');
+    expect(note('chlorophyll-needed')).toBe(note('light-needed'));
+    expect(note('carbon-dioxide-needed')).toBe('School lab, with your teacher. Your teacher destarches the plant and handles the soda lime.');
+    expect(note('insulation')).toBe('Hot water provided by the teacher.');
   });
 
   it('gives each practical only its own apparatus, plus the common tray', () => {
