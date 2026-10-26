@@ -17,7 +17,7 @@ export function DiagramResult() {
   const [viewing, setViewing] = useState<Diagram | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const { gate, busy } = useRequestGate();
+  const gate = useRequestGate();
   const svgRef = useRef<SVGSVGElement>(null);
   const title = themeTitle(plan.theme.theme, plan.theme.customTitle);
 
@@ -52,8 +52,8 @@ export function DiagramResult() {
   const shown = viewing ?? working;
   const blocked = hasSafetyBlock(working.checks);
 
-  function run(label: string, fn: () => Promise<void>) {
-    void gate.tryRun(async () => {
+  function run(action: string, label: string, fn: () => Promise<void>) {
+    void gate.tryRun(action, async () => {
       setMsg(null);
       try {
         await fn();
@@ -90,22 +90,22 @@ export function DiagramResult() {
 
       <div className="btn-row">
         <Link className="btn" to={`/s/${session.id}/diagram/canvas`}><Icon name="pencil" /> Revise on canvas</Link>
-        <button className="btn" aria-busy={busy} onClick={() => run('PNG downloaded.', () => exportPng(svgRef.current!, plan, title))}>
+        <button className="btn" aria-busy={gate.busy('png')} onClick={() => run('png', 'PNG downloaded.', () => exportPng(svgRef.current!, plan, title))}>
           <Icon name="download" /> Export PNG
         </button>
-        <button className="btn" aria-busy={busy} onClick={() => run('PDF downloaded.', () => exportPdf(svgRef.current!, plan, title))}>
+        <button className="btn" aria-busy={gate.busy('pdf')} onClick={() => run('pdf', 'PDF downloaded.', () => exportPdf(svgRef.current!, plan, title))}>
           <Icon name="download" /> Export PDF
         </button>
         {!viewing && (
           <>
-            <button className="btn" aria-busy={busy} onClick={() => run('Version saved.', async () => {
+            <button className="btn" aria-busy={gate.busy('save')} onClick={() => run('save', 'Version saved.', async () => {
               await api.saveVersion(session.id, working.scene, `${session.id}-${Date.now()}`);
               await load();
             })}>
               <Icon name="history" /> Save version
             </button>
-            <button className="btn btn-primary" aria-busy={busy} disabled={blocked || working.status === 'submitted'} aria-describedby="submit-why"
-              onClick={() => run('Diagram submitted. Well done!', async () => {
+            <button className="btn btn-primary" aria-busy={gate.busy('submit')} disabled={blocked || working.status === 'submitted'} aria-describedby="submit-why"
+              onClick={() => run('submit', 'Diagram submitted. Well done!', async () => {
                 const d = await api.submitDiagram(working.id);
                 setWorking(d);
               })}>
@@ -138,13 +138,13 @@ export function DiagramResult() {
                 </span>
                 <span className="btn-row">
                   <button className="btn btn-small" onClick={() => setViewing(v)} aria-label={`View version ${v.version}`}>View</button>
-                  <button className="btn btn-small" aria-label={`Restore version ${v.version}`} onClick={() => run(`Version ${v.version} restored.`, async () => {
+                  <button className="btn btn-small" aria-label={`Restore version ${v.version}`} aria-busy={gate.busy(`restore-${v.id}`)} onClick={() => run(`restore-${v.id}`, `Version ${v.version} restored.`, async () => {
                     const d = await api.saveWorking(session.id, v.scene);
                     setWorking(d);
                     setViewing(null);
                     nav(`/s/${session.id}/diagram/canvas`);
                   })}>Restore</button>
-                  <button className="btn btn-small" aria-label={`Delete version ${v.version}`} onClick={() => run('Version deleted.', async () => {
+                  <button className="btn btn-small" aria-label={`Delete version ${v.version}`} aria-busy={gate.busy(`delete-${v.id}`)} onClick={() => run(`delete-${v.id}`, 'Version deleted.', async () => {
                     await api.deleteDiagram(v.id);
                     await load();
                   })}><Icon name="trash" /></button>

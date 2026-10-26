@@ -1,39 +1,44 @@
 /**
- * Tracks in-flight requests so a button can stay enabled (and keep focus) while busy.
- * `tryRun` is for user actions: a repeat press while another user action is in flight is
- * ignored, not queued. `track` is for automatic requests (such as the tutor greeting): they
- * count as busy but never cause a user's press to be dropped.
+ * Tracks in-flight requests so buttons can stay enabled (and keep focus) while busy.
+ * `tryRun(action, …)` is for user actions: pressing the same action again while it is in
+ * flight is ignored, not queued, so nothing is sent twice; a different action always runs.
+ * `track` is for automatic requests (such as the tutor greeting): they count as busy but
+ * never block a press.
  */
 export interface RequestGate {
-  readonly busy: boolean;
+  /** With an action: is that action in flight? Without: is anything in flight? */
+  busy(action?: string): boolean;
   track<T>(task: () => Promise<T>): Promise<T>;
-  tryRun<T>(task: () => Promise<T>): Promise<T | undefined>;
+  tryRun<T>(action: string, task: () => Promise<T>): Promise<T | undefined>;
 }
 
-export function createRequestGate(onBusyChange: (busy: boolean) => void = () => undefined): RequestGate {
-  let inflight = 0;
-  let userInflight = false;
-  const gate: RequestGate = {
-    get busy() {
-      return inflight > 0;
+export function createRequestGate(onChange: () => void = () => undefined): RequestGate {
+  let tracked = 0;
+  const running = new Set<string>();
+  return {
+    busy(action) {
+      return action === undefined ? tracked > 0 || running.size > 0 : running.has(action);
     },
     async track(task) {
-      if (inflight++ === 0) onBusyChange(true);
+      tracked++;
+      onChange();
       try {
         return await task();
       } finally {
-        if (--inflight === 0) onBusyChange(false);
+        tracked--;
+        onChange();
       }
     },
-    async tryRun(task) {
-      if (userInflight) return undefined;
-      userInflight = true;
+    async tryRun(action, task) {
+      if (running.has(action)) return undefined;
+      running.add(action);
+      onChange();
       try {
-        return await gate.track(task);
+        return await task();
       } finally {
-        userInflight = false;
+        running.delete(action);
+        onChange();
       }
     },
   };
-  return gate;
 }

@@ -8,7 +8,8 @@ import { useRequestGate } from '../hooks';
 export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onClose?: () => void; headingId: string }) {
   const { session, setChat, flush } = useSession();
   const [text, setText] = useState('');
-  const { gate, busy } = useRequestGate();
+  const gate = useRequestGate();
+  const busy = gate.busy();
   const [error, setError] = useState<{ message: string; retry: ChatRequest & { retry?: boolean } } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const messages = session.chat.filter((m) => m.stage === stage);
@@ -29,7 +30,7 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
       setError({ message: errorMessage(err), retry: { ...req, retry: saved.length > 0 || req.retry } });
     }
   }
-  const send = (req: ChatRequest & { retry?: boolean }) => gate.tryRun(() => request(req));
+  const send = (req: ChatRequest & { retry?: boolean }) => gate.tryRun(req.type, () => request(req));
 
   const entered = useRef(new Set<string>());
   useEffect(() => {
@@ -103,10 +104,10 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
       )}
       <div className="tutor-actions">
         <div className="btn-row">
-          <button className="btn btn-small" aria-busy={busy} onClick={() => void send({ type: 'check', stage })}>
+          <button className="btn btn-small" aria-busy={gate.busy('check')} onClick={() => void send({ type: 'check', stage })}>
             <Icon name="check" /> Check my work
           </button>
-          <button className="btn btn-small" aria-busy={busy} disabled={hintLevel >= 3} onClick={() => void send({ type: 'hint', stage })}
+          <button className="btn btn-small" aria-busy={gate.busy('hint')} disabled={hintLevel >= 3} onClick={() => void send({ type: 'hint', stage })}
             style={{ borderColor: 'var(--amber-line)', background: hintLevel >= 3 ? undefined : 'var(--amber-bg)' }}>
             <Icon name="bulb" /> {hintLevel >= 3 ? 'All 3 hints used' : `Get hint ${hintLevel + 1} of 3`}
           </button>
