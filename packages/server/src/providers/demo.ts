@@ -1,5 +1,5 @@
-import { STAGE_TITLES, type AppStage, type Issue } from '@labguide/shared';
-import type { PlanReview, ProviderHealth, TutorDraft, TutorProvider, TutorTurnContext } from './types.js';
+import { STAGE_TITLES, heuristicStageReview, type AppStage, type Issue } from '@labguide/shared';
+import type { PlanReview, ProviderHealth, StageReviewContext, TutorDraft, TutorProvider, TutorTurnContext } from './types.js';
 
 const GREETINGS: Record<AppStage, { text: string; questions: string[] }> = {
   theme: {
@@ -124,6 +124,26 @@ function safetyReply(stage: AppStage, block: { message: string; hazard?: string;
 }
 
 /**
+ * The deterministic safety reply for this turn, if a safety rule is broken. Used by every
+ * provider: safety blocks are decided by rules, never by a model.
+ */
+export function ruleSafetyReply(ctx: TutorTurnContext): TutorDraft | null {
+  const { request, stage, validation, diagramChecks } = ctx;
+  const planBlocks =
+    stage === 'diagram'
+      ? []
+      : validation.safetyBlocks.filter(
+          (b) => b.stage === stage || stage === 'safety' || stage === 'summary' || b.stage !== 'safety',
+        );
+  const diagramBlocks = stage === 'diagram' ? diagramChecks.filter((c) => c.severity === 'safety_block' && !c.passed) : [];
+  const block = planBlocks[0] ?? diagramBlocks[0];
+  if (block && (request.type !== 'enter' || planBlocks.some((b) => b.stage === stage) || diagramBlocks.length)) {
+    return safetyReply(stage, block);
+  }
+  return null;
+}
+
+/**
  * Simulated tutor. Replies come from templates keyed to the stage and the
  * deterministic validation results, so they react to what the student wrote,
  * but they never contain the student's answers.
@@ -135,17 +155,8 @@ export class DemoAdapter implements TutorProvider {
   async sendTurn(ctx: TutorTurnContext): Promise<TutorDraft> {
     const { request, stage, validation, diagramChecks } = ctx;
 
-    const planBlocks =
-      stage === 'diagram'
-        ? []
-        : validation.safetyBlocks.filter(
-            (b) => b.stage === stage || stage === 'safety' || stage === 'summary' || b.stage !== 'safety',
-          );
-    const diagramBlocks = stage === 'diagram' ? diagramChecks.filter((c) => c.severity === 'safety_block' && !c.passed) : [];
-    const block = planBlocks[0] ?? diagramBlocks[0];
-    if (block && (request.type !== 'enter' || planBlocks.some((b) => b.stage === stage) || diagramBlocks.length)) {
-      return safetyReply(stage, block);
-    }
+    const safety = ruleSafetyReply(ctx);
+    if (safety) return safety;
 
     if (request.type === 'enter') {
       return { kind: 'greeting', ...GREETINGS[stage] };
@@ -216,16 +227,9 @@ export class DemoAdapter implements TutorProvider {
     };
   }
 
-  async reviewPlan(ctx: Omit<TutorTurnContext, 'request' | 'hintLevel'>): Promise<PlanReview> {
-    const v = ctx.validation;
-    if (v.canGenerateDiagram) {
-      return { summary: 'Your plan passes all the checks. Well done.', questions: ['Which part are you most proud of?'] };
-    }
-    const first = Object.values(v.stages).flatMap((s) => s.issues.filter((i) => i.required))[0];
-    return {
-      summary: 'Your plan is not finished yet.',
-      questions: first?.message.endsWith('?') ? [first.message] : ['Which stage still needs work?'],
-    };
+  /** No model in Demo mode: the stricter built-in quality checks decide. */
+  async reviewPlan(ctx: StageReviewContext): Promise<PlanReview> {
+    return heuristicStageReview(ctx.plan, ctx.stage);
   }
 
   async health(): Promise<ProviderHealth> {

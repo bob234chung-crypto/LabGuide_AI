@@ -4,5 +4,7 @@ export * from './rules/text.js';
 export * from './rules/hazards.js';
 export * from './rules/plan.js';
 export * from './rules/diagram.js';
+export * from './rules/gate.js';
+export * from './rules/quality.js';
 export * from './scene.js';
 export * from './labels.js';

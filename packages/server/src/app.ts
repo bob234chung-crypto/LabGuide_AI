@@ -12,25 +12,41 @@ import {
   emptyScene,
   hasSafetyBlock,
   isAppStageUnlocked,
+  isReviewedStage,
+  reviewsNeededFor,
   safetyChecklist,
   sanitizeScene,
+  stageAnswerKey,
   themeTitle,
   validatePlan,
   PLAN_STAGES,
+  STAGE_TITLES,
   type AppStage,
   type ChatRequest,
   type Diagram,
   type DiagramMethod,
+  type PlanValidation,
   type ProviderStatus,
+  type ReviewedStage,
   type Session,
   type SessionSummary,
+  type StageReview,
   type StudentMessage,
   type ThemeId,
   type TutorReply,
 } from '@labguide/shared';
-import { configErrors, loadConfig, geminiConfigured, poeConfigured, type ServerConfig } from './config.js';
+import {
+  configErrors,
+  deepseekConfigured,
+  loadConfig,
+  geminiConfigured,
+  poeConfigured,
+  type ProviderName,
+  type ServerConfig,
+} from './config.js';
 import { BusyError, FileBackend, RedisBackend, requestScope, type DataBackend } from './datastore.js';
-import { KvError, UpstashRestKv } from './kv.js';
+import { KvError, MemoryKv, UpstashRestKv, type KvClient } from './kv.js';
+import { SpendMeter } from './spend.js';
 import { log, redactUrl } from './logger.js';
 import { ProviderRegistry } from './providers/registry.js';
 import { createOAuthState, createPkcePair } from './providers/poe.js';
@@ -80,12 +96,26 @@ function defaultBackend(cfg: ServerConfig, store?: Store): DataBackend {
   return new FileBackend(new Store(cfg.dataDir));
 }
 
-export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store; backend?: DataBackend } = {}) {
+export interface AppDeps {
+  /** Upstream HTTP client for provider calls (tests pass a mock). */
+  fetch?: typeof fetch;
+  /** Where the shared daily spend counter lives. Defaults to Redis when configured. */
+  spendKv?: KvClient;
+}
+
+/** Leaves time inside the 30 s function limit and per-student lock for saving the result. */
+const AI_WORK_BUDGET_MS = 22_000;
+
+export function createApp(
+  opts: { config?: Partial<ServerConfig>; store?: Store; backend?: DataBackend; deps?: AppDeps } = {},
+) {
   const cfg = loadConfig(opts.config);
   const backend = opts.backend ?? defaultBackend(cfg, opts.store);
   const store = backend instanceof FileBackend ? backend.store : null;
   const vault = new Vault(cfg.vaultKey);
-  const providers = new ProviderRegistry(cfg);
+  const spendKv = opts.deps?.spendKv ?? (cfg.kv ? new UpstashRestKv(cfg.kv.url, cfg.kv.token) : new MemoryKv());
+  const meter = new SpendMeter(spendKv, cfg.dailySpendCapUsd);
+  const providers = new ProviderRegistry(cfg, { meter, fetch: opts.deps?.fetch });
   const db = (req: Request) => req.store!;
   const scope = requestScope(backend, (req) => readStudentCookie(cfg, req.cookies?.[STUDENT_COOKIE]));
 
@@ -146,6 +176,80 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
     return { session: s, validation: validatePlan(s.plan), checklist: safetyChecklist(s.plan) };
   }
 
+  const REVIEW_FALLBACK_NOTE: Record<NonNullable<StageReview['fallbackReason']>, string> = {
+    not_configured: 'Checked with LabGuide’s built-in checks (Demo mode – no AI tutor on this server).',
+    budget: 'The AI tutor has reached today’s limit, so LabGuide used its built-in checks instead.',
+    unavailable: 'The AI tutor is not available right now, so LabGuide used its built-in checks instead.',
+    invalid_output: 'The AI tutor’s reply could not be used, so LabGuide used its built-in checks instead.',
+    suspicious_input: 'LabGuide found words that are not part of a science answer.',
+  };
+
+  /**
+   * Reviews one stage (after the rules pass) and stores the verdict on the session. A verdict
+   * for unchanged answers is reused, except a heuristic failure, which is retried in case the AI
+   * is available again. A failed review adds a guiding tutor message (questions, never answers).
+   */
+  async function reviewStage(req: Request, s: Session, stage: ReviewedStage, validation: PlanValidation, deadline: number) {
+    const answerKey = stageAnswerKey(s.plan, stage);
+    const cached = s.stageReviews?.[stage];
+    if (cached && cached.answerKey === answerKey && (cached.passed || cached.source === 'ai')) return { review: cached, message: null };
+    const result = await providers.reviewStage(db(req), { stage, plan: s.plan, validation }, deadline);
+    const review: StageReview = { stage, answerKey, reviewedAt: now(), ...result };
+    s.stageReviews = { ...s.stageReviews, [stage]: review };
+    let message: TutorReply | null = null;
+    if (!review.passed) {
+      const title = stage === 'summary' ? 'whole plan' : STAGE_TITLES[stage].toLowerCase();
+      message = {
+        id: newId('msg'),
+        role: 'tutor',
+        stage,
+        kind: 'socratic',
+        text: [
+          `Not yet. Your ${title} needs a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
+          review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        questions: review.feedbackQuestions,
+        demo: false,
+        provider: review.source === 'ai' ? 'deepseek' : 'rules',
+        createdAt: now(),
+      };
+      s.chat.push(message);
+    }
+    return { review, message };
+  }
+
+  /**
+   * Server-side gate for moving to `target`: the deterministic rules first (they always win),
+   * then a quality review of every earlier reviewed stage whose answers changed since it passed.
+   */
+  async function gate(req: Request, s: Session, target: AppStage) {
+    const validation = validatePlan(s.plan);
+    if (!isAppStageUnlocked(validation, target)) {
+      return { ok: false as const, status: 409, body: { error: 'stage_locked', message: 'Finish the earlier stages first.', validation } };
+    }
+    const deadline = Date.now() + AI_WORK_BUDGET_MS;
+    for (const stage of reviewsNeededFor(target)) {
+      const { review, message } = await reviewStage(req, s, stage, validation, deadline);
+      if (!review.passed) {
+        return {
+          ok: false as const,
+          status: 409,
+          body: {
+            error: 'review_failed',
+            stage,
+            review,
+            note: review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : null,
+            message: 'Not yet. Look at the tutor’s questions, improve your answer, then try again.',
+            messages: message ? [message] : [],
+          },
+        };
+      }
+    }
+    return { ok: true as const };
+  }
+
   function touch(req: Request, s: Session) {
     s.updatedAt = now();
     db(req).save();
@@ -157,14 +261,30 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
       .sort((a, b) => a.version - b.version);
   }
 
-  function providerStatus(req: Request): ProviderStatus {
+  async function providerStatus(req: Request): Promise<ProviderStatus> {
     const studentId = req.studentId!;
     const cred = db(req).data.credentials[studentId];
     const active = providers.active(db(req));
     const poeReady = poeConfigured(cfg);
+    const dsConfigured = deepseekConfigured(cfg);
+    const dsHealth = dsConfigured ? await providers.deepseek.health() : null;
+    const budgetReached = await providers.budgetReached(db(req));
     return {
       activeProvider: active.id,
-      demoMode: active.demo,
+      demoMode: active.demo || budgetReached,
+      deepseek: {
+        configuredOnServer: dsConfigured,
+        // "Connected" only with a server key AND a passing health check.
+        state: !dsConfigured ? 'not_configured' : dsHealth?.ok ? 'connected' : 'configured_unreachable',
+        label: !dsConfigured
+          ? 'Not configured on this server – the Demo tutor is used'
+          : dsHealth?.ok
+            ? 'Connected (configured on the server)'
+            : 'Configured on the server – not reachable right now',
+        model: dsConfigured ? cfg.provider.deepseek.model : null,
+        budgetReached,
+        dailyCapUsd: cfg.dailySpendCapUsd,
+      },
       poe: {
         configuredOnServer: poeReady,
         // Never "Connected": a real connection needs real credentials + registration + callback.
@@ -210,14 +330,14 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
     res.json({ deleted: true });
   });
 
-  api.get('/settings/provider', (req, res) => res.json(providerStatus(req)));
+  api.get('/settings/provider', wrap(async (req, res) => res.json(await providerStatus(req))));
 
-  api.put('/settings/demo', (req, res) => {
+  api.put('/settings/demo', wrap(async (req, res) => {
     const st = db(req).data.students[req.studentId!];
     st.simulateErrors = req.body?.simulateErrors === true;
     db(req).save();
-    res.json(providerStatus(req));
-  });
+    res.json(await providerStatus(req));
+  }));
 
   /* ---------- Apparatus library (read-only) ---------- */
 
@@ -289,36 +409,39 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
     res.json(sessionPayload(s));
   });
 
-  api.put('/sessions/:id/progress', (req, res) => {
+  const reviewLimit = rateLimit(backend, { capacity: 40, refillPerSec: 1, key: (req) => `review:${req.studentId}` });
+
+  /** Moving between stages. Moving forward past a reviewed stage runs (or reuses) its quality review. */
+  api.put('/sessions/:id/progress', reviewLimit, wrap(async (req, res) => {
     const s = ownedSession(req, res);
     if (!s) return;
     const target = String(req.body?.currentStage ?? '') as AppStage;
     if (!APP_STAGES.includes(target)) throw new BadInput('unknown stage');
-    const v = validatePlan(s.plan);
-    if (!isAppStageUnlocked(v, target)) {
-      return res.status(409).json({
-        error: 'stage_locked',
-        message: 'Finish the earlier stages first.',
-        validation: v,
-      });
+    const result = await gate(req, s, target);
+    if (!result.ok) {
+      touch(req, s);
+      return res.status(result.status).json({ ...result.body, ...sessionPayload(s) });
     }
     s.currentStage = target;
     const method = req.body?.diagramMethod as DiagramMethod | undefined;
     if (method === 'canvas') s.diagramMethod = 'canvas';
     touch(req, s);
     res.json(sessionPayload(s));
-  });
+  }));
 
-  api.post('/sessions/:id/review', wrap(async (req, res) => {
+  /** Quality review of one stage without moving (default: the whole plan). */
+  api.post('/sessions/:id/review', reviewLimit, wrap(async (req, res) => {
     const s = ownedSession(req, res);
     if (!s) return;
+    const stage = String(req.body?.stage ?? 'summary');
+    if (!isReviewedStage(stage)) throw new BadInput('unknown stage');
     const validation = validatePlan(s.plan);
-    const ac = new AbortController();
-    const review = await providers.active(db(req)).reviewPlan(
-      { stage: 'summary', plan: s.plan, validation, diagramChecks: [], history: [] },
-      ac.signal,
-    );
-    res.json({ validation, review, demo: providers.active(db(req)).demo });
+    if (!validation.stages[stage].complete) {
+      return res.json({ review: null, ...sessionPayload(s) });
+    }
+    const { review, message } = await reviewStage(req, s, stage, validation, Date.now() + AI_WORK_BUDGET_MS);
+    touch(req, s);
+    res.json({ review, messages: message ? [message] : [], ...sessionPayload(s) });
   }));
 
   /* ---------- Tutor chat ---------- */
@@ -362,7 +485,7 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
       const validation = validatePlan(s.plan);
       const diagramChecks = s.workingDiagram ? checkDiagram(s.workingDiagram.scene, s.plan) : [];
       try {
-        const { draft, demo } = await providers.sendTurn(db(req), 
+        const { draft, demo, provider, fallback } = await providers.sendTurn(db(req),
           {
             request,
             stage,
@@ -380,6 +503,8 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
           role: 'tutor',
           stage,
           demo,
+          provider,
+          ...(fallback ? { fallback } : {}),
           createdAt: now(),
           ...draft,
         };
@@ -579,7 +704,7 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
     }
     delete db(req).data.credentials[req.studentId!];
     db(req).save();
-    res.json(providerStatus(req));
+    res.json(await providerStatus(req));
   }));
 
   /* ---------- Admin (hidden from students; bearer token from the secret store) ---------- */
@@ -587,21 +712,26 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
   const admin = express.Router();
   admin.use(requireAdmin(cfg));
   admin.use(scope);
-  admin.get('/provider-config', (req, res) => {
+  admin.get('/provider-config', wrap(async (req, res) => {
     res.json({
-      active: db(req).data.providerConfig.active,
+      active: db(req).data.providerConfig.updatedAt ? db(req).data.providerConfig.active : cfg.provider.active,
+      /** What actually answers: falls back to demo when the chosen provider is not configured. */
+      effective: providers.active(db(req)).id,
+      serverDefault: cfg.provider.active,
       allowlist: cfg.provider.allowlist,
       poe: { configured: poeConfigured(cfg), model: cfg.provider.poe.model },
       gemini: { configured: geminiConfigured(cfg), model: cfg.provider.gemini.model },
+      deepseek: { configured: deepseekConfigured(cfg), model: cfg.provider.deepseek.model },
+      spend: { dailyCapUsd: cfg.dailySpendCapUsd, spentTodayUsd: await meter.spentTodayUsd() },
       updatedAt: db(req).data.providerConfig.updatedAt,
     });
-  });
+  }));
   admin.put('/provider-config', (req, res) => {
     const active = String(req.body?.active);
     if (!(cfg.provider.allowlist as readonly string[]).includes(active)) {
       return res.status(400).json({ error: 'provider_not_allowlisted' });
     }
-    db(req).data.providerConfig = { active: active as 'demo' | 'poe' | 'gemini', updatedAt: now() };
+    db(req).data.providerConfig = { active: active as ProviderName, updatedAt: now() };
     db(req).save();
     res.json(db(req).data.providerConfig);
   });

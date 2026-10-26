@@ -27,8 +27,8 @@ export interface ServerConfig {
   dailyTurnBudget: number;
   provider: {
     /** Allowlisted provider ids. The client can never choose one. */
-    allowlist: readonly ('demo' | 'poe' | 'gemini')[];
-    active: 'demo' | 'poe' | 'gemini';
+    allowlist: readonly ProviderName[];
+    active: ProviderName;
     poe: {
       clientId: string | null;
       clientSecret: string | null;
@@ -40,10 +40,29 @@ export interface ServerConfig {
       apiKey: string | null;
       model: string;
     };
+    deepseek: {
+      apiKey: string | null;
+      /** Fixed, not read from the environment: only allowlisted endpoints and models are called. */
+      baseUrl: typeof DEEPSEEK_BASE_URL;
+      model: typeof DEEPSEEK_MODEL;
+      /** Output token limits per call. */
+      maxTokensTurn: number;
+      maxTokensReview: number;
+      /** Conservative USD prices per million tokens, used to estimate spend before and after each call. */
+      priceInPerM: number;
+      priceOutPerM: number;
+    };
     timeoutMs: number;
     maxRetries: number;
   };
+  /** Total spend on paid AI calls per day (Hong Kong date), shared by every student. */
+  dailySpendCapUsd: number;
 }
+
+export type ProviderName = 'demo' | 'poe' | 'gemini' | 'deepseek';
+export const PROVIDER_ALLOWLIST: readonly ProviderName[] = ['demo', 'poe', 'gemini', 'deepseek'];
+export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com' as const;
+export const DEEPSEEK_MODEL = 'deepseek-chat' as const;
 
 function env(name: string): string | null {
   const v = process.env[name];
@@ -68,6 +87,11 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
   const production = onVercel || env('NODE_ENV') === 'production';
   const kvUrl = env('KV_REST_API_URL') ?? env('UPSTASH_REDIS_REST_URL');
   const kvToken = env('KV_REST_API_TOKEN') ?? env('UPSTASH_REDIS_REST_TOKEN');
+  const deepseekKey = env('DEEPSEEK_API_KEY');
+  const requested = env('LABGUIDE_PROVIDER') as ProviderName | null;
+  const active: ProviderName =
+    requested && PROVIDER_ALLOWLIST.includes(requested) ? requested : deepseekKey ? 'deepseek' : 'demo';
+  const capEnv = Number(env('LABGUIDE_DAILY_SPEND_CAP_USD') ?? 1);
   const base: ServerConfig = {
     port: Number(env('PORT') ?? 8787),
     dataDir: env('LABGUIDE_DATA_DIR') ?? path.resolve(here, '../data'),
@@ -84,8 +108,8 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     retentionDays: 30,
     dailyTurnBudget: Number(env('LABGUIDE_DAILY_TURN_BUDGET') ?? 300),
     provider: {
-      allowlist: ['demo', 'poe', 'gemini'],
-      active: (env('LABGUIDE_PROVIDER') as 'demo' | 'poe' | 'gemini' | null) ?? 'demo',
+      allowlist: PROVIDER_ALLOWLIST,
+      active,
       poe: {
         clientId: env('POE_CLIENT_ID'),
         clientSecret: env('POE_CLIENT_SECRET'),
@@ -96,9 +120,22 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
         apiKey: env('GEMINI_API_KEY'),
         model: env('GEMINI_MODEL') ?? 'configured-on-server',
       },
-      timeoutMs: 15000,
+      deepseek: {
+        apiKey: deepseekKey,
+        baseUrl: DEEPSEEK_BASE_URL,
+        model: DEEPSEEK_MODEL,
+        maxTokensTurn: 350,
+        maxTokensReview: 250,
+        // Above DeepSeek's published deepseek-chat prices (cache-miss input, output), so the cap errs on the safe side.
+        priceInPerM: 0.6,
+        priceOutPerM: 2.0,
+      },
+      // Two attempts must finish well inside the 30 s function limit and the 30 s per-student lock.
+      timeoutMs: 10000,
       maxRetries: 1,
     },
+    // Capped at US$1 even if the variable is set higher; a lower value can be set to test the fallback.
+    dailySpendCapUsd: Number.isFinite(capEnv) && capEnv >= 0 ? Math.min(capEnv, 1) : 1,
   };
   return { ...base, ...overrides };
 }
@@ -121,4 +158,8 @@ export function poeConfigured(c: ServerConfig): boolean {
 
 export function geminiConfigured(c: ServerConfig): boolean {
   return !!c.provider.gemini.apiKey;
+}
+
+export function deepseekConfigured(c: ServerConfig): boolean {
+  return !!c.provider.deepseek.apiKey;
 }

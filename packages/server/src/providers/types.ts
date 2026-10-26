@@ -5,6 +5,7 @@ import type {
   DiagramCheck,
   Plan,
   PlanValidation,
+  ReviewedStage,
   TutorReplyKind,
 } from '@labguide/shared';
 
@@ -28,9 +29,17 @@ export interface TutorDraft {
   hintLevel?: 1 | 2 | 3;
 }
 
+/** What a stage quality review sees. Only called after the deterministic rules pass. */
+export interface StageReviewContext {
+  stage: ReviewedStage;
+  plan: Plan;
+  validation: PlanValidation;
+}
+
+/** Structured verdict on one stage. Validated against a server-side schema. */
 export interface PlanReview {
-  summary: string;
-  questions: string[];
+  passed: boolean;
+  feedbackQuestions: string[];
 }
 
 export interface ProviderHealth {
@@ -40,10 +49,10 @@ export interface ProviderHealth {
 }
 
 export interface TutorProvider {
-  readonly id: 'demo' | 'poe' | 'gemini';
+  readonly id: 'demo' | 'poe' | 'gemini' | 'deepseek';
   readonly demo: boolean;
   sendTurn(ctx: TutorTurnContext, signal: AbortSignal): Promise<TutorDraft>;
-  reviewPlan(ctx: Omit<TutorTurnContext, 'request' | 'hintLevel'>, signal: AbortSignal): Promise<PlanReview>;
+  reviewPlan(ctx: StageReviewContext, signal: AbortSignal): Promise<PlanReview>;
   health(): Promise<ProviderHealth>;
 }
 

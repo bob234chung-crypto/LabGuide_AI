@@ -225,10 +225,9 @@ describe('API', () => {
 });
 
 describe('tutor output schema', () => {
-  it('rejects replies with more than 3 questions', () => {
-    expect(() =>
-      validateTutorDraft({ kind: 'socratic', text: 'A? B?', questions: ['C?', 'D?'] }),
-    ).toThrow();
+  it('repairs a question list that would pass 3 questions, and rejects text with more than 3', () => {
+    expect(validateTutorDraft({ kind: 'socratic', text: 'A? B?', questions: ['C?', 'D?'] }).questions).toEqual(['C?']);
+    expect(() => validateTutorDraft({ kind: 'socratic', text: 'A? B? C? D?', questions: [] })).toThrow();
   });
   it('strips markup and unknown kinds', () => {
     expect(() => validateTutorDraft({ kind: 'exec', text: 'x', questions: [] })).toThrow();

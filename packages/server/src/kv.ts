@@ -1,6 +1,6 @@
 /**
  * Minimal Redis client surface used by the Redis data backend. Only GET, SET (EX/PX/NX),
- * DEL and INCR are used, so it works with Upstash / Vercel KV over their REST API.
+ * DEL, INCR and INCRBY are used, so it works with Upstash / Vercel KV over their REST API.
  */
 export type KvCommand = (string | number)[];
 
@@ -94,9 +94,10 @@ export class MemoryKv implements KvClient {
       }
       case 'DEL':
         return [key, ...rest].reduce((n, k) => n + (this.live(k) && this.map.delete(k) ? 1 : 0), 0);
-      case 'INCR': {
+      case 'INCR':
+      case 'INCRBY': {
         const e = this.live(key);
-        const next = Number(e?.value ?? 0) + 1;
+        const next = Number(e?.value ?? 0) + (cmd.toUpperCase() === 'INCRBY' ? Number(rest[0]) : 1);
         this.map.set(key, { value: String(next), expiresAt: e?.expiresAt ?? null });
         return next;
       }

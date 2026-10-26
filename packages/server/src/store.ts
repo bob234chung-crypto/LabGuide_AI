@@ -35,7 +35,8 @@ export interface DbShape {
   idempotency: Record<string, { diagramId: string; createdAt: string }>;
   credentials: Record<string, ProviderCredentialRecord>;
   oauth: Record<string, PendingOAuthRecord>;
-  providerConfig: { active: 'demo' | 'poe' | 'gemini'; updatedAt: string | null };
+  /** Set by the admin API. While `updatedAt` is null the server config (env) decides. */
+  providerConfig: { active: 'demo' | 'poe' | 'gemini' | 'deepseek'; updatedAt: string | null };
 }
 
 export function emptyDb(): DbShape {

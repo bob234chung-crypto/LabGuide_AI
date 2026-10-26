@@ -209,6 +209,12 @@ export interface ThemeInfo {
 
 export type TutorReplyKind = 'socratic' | 'hint' | 'praise' | 'safety' | 'greeting';
 
+/** Who wrote a tutor reply: the simulated demo tutor, the real AI, or LabGuide's own rules. */
+export type ReplySource = 'demo' | 'deepseek' | 'rules';
+
+/** Why a demo/template reply was shown while a real provider is active. */
+export type ReplyFallback = 'budget' | 'invalid_output';
+
 export interface TutorReply {
   id: string;
   role: 'tutor';
@@ -218,6 +224,9 @@ export interface TutorReply {
   hintLevel?: 1 | 2 | 3;
   stage: AppStage;
   demo: boolean;
+  /** Missing on replies saved before real providers existed (they were all demo). */
+  provider?: ReplySource;
+  fallback?: ReplyFallback;
   createdAt: string;
 }
 
@@ -249,8 +258,28 @@ export interface Session {
   workingDiagram: Diagram | null;
   chat: ChatMessage[];
   hintLevels: Partial<Record<AppStage, number>>;
+  /** Quality reviews that gate moving on. Missing on sessions created before gating existed. */
+  stageReviews?: Partial<Record<ReviewedStage, StageReview>>;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Stages whose answer quality is reviewed before the student may move past them. */
+export type ReviewedStage = 'hypothesis' | 'variables' | 'apparatus' | 'procedure' | 'summary';
+
+export type ReviewFallbackReason = 'not_configured' | 'budget' | 'unavailable' | 'invalid_output' | 'suspicious_input';
+
+export interface StageReview {
+  stage: ReviewedStage;
+  passed: boolean;
+  /** Socratic questions only. Never the answer. At most 3. */
+  feedbackQuestions: string[];
+  /** 'ai' = the AI reviewed it (after the rules passed); 'heuristic' = LabGuide's stricter built-in checks. */
+  source: 'ai' | 'heuristic';
+  fallbackReason?: ReviewFallbackReason;
+  /** Fingerprint of the answers that were reviewed. A review only counts while the answers are unchanged. */
+  answerKey: string;
+  reviewedAt: string;
 }
 
 export interface SessionSummary {
@@ -264,7 +293,7 @@ export interface SessionSummary {
 
 /* ---------- Provider / settings ---------- */
 
-export type ProviderId = 'demo' | 'poe' | 'gemini';
+export type ProviderId = 'demo' | 'poe' | 'gemini' | 'deepseek';
 
 export type ConnectionState =
   | 'demo_simulated'
@@ -285,6 +314,16 @@ export interface ProviderStatus {
     state: ConnectionState;
     label: string;
     configuredOnServer: boolean;
+  };
+  deepseek: {
+    /** 'connected' only when the key exists on the server AND the health check passed. */
+    state: 'connected' | 'configured_unreachable' | 'not_configured';
+    label: string;
+    configuredOnServer: boolean;
+    model: string | null;
+    /** Today's shared spending limit has been reached; the Demo tutor is used until tomorrow. */
+    budgetReached: boolean;
+    dailyCapUsd: number;
   };
   retentionDays: number;
   simulateErrors: boolean;
