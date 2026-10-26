@@ -96,7 +96,8 @@ function variablesQuestions(plan: Plan): string[] {
   if (controls.some((c) => EMPTY_CONTROL.test(c) || contentWords(c).length === 0)) {
     q.push('Which exact things will you keep the same? Can you name each one?');
   }
-  if (ivWords.length && controls.some((c) => contentWords(c).some((w) => ivWords.includes(w) && !dvWords.includes(w)))) {
+  // Same quantity as the independent variable (same head word, e.g. "temperature of …"), not just the same object.
+  if (ivWords.length && controls.some((c) => contentWords(c.replace(/^\s*(the\s+)?same\s+/i, ''))[0] === ivWords[0])) {
     q.push('Can you keep something the same if you also change it on purpose?');
   }
   return q;

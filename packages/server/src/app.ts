@@ -205,7 +205,7 @@ export function createApp(
         stage,
         kind: 'socratic',
         text: [
-          `Not yet. Your ${title} needs a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
+          `Not yet. Your ${title} ${stage === 'variables' ? 'need' : 'needs'} a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
           review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
         ]
           .filter(Boolean)

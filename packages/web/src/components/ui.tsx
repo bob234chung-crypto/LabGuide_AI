@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import type { DiagramCheck, Issue } from '@labguide/shared';
+import type { DiagramCheck, Issue, StageReview } from '@labguide/shared';
 
 const PATHS: Record<string, string> = {
   undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
@@ -44,9 +44,57 @@ export function Icon({ name, size = 20, title }: { name: keyof typeof PATHS | st
 
 export function DemoBadge({ text = 'Demo mode' }: { text?: string }) {
   return (
-    <span className="badge-demo" title="Simulated. No real AI provider is connected.">
+    <span className="badge-demo" title="Simulated. No real AI provider wrote this.">
       <Icon name="bulb" size={14} /> {text}
     </span>
+  );
+}
+
+/** Marks text written by the real AI (through the LabGuide server). */
+export function AiBadge({ text = 'AI tutor (DeepSeek)' }: { text?: string }) {
+  return (
+    <span className="badge-ai" title="Written by the DeepSeek AI model, through the LabGuide server.">
+      <Icon name="chat" size={13} /> {text}
+    </span>
+  );
+}
+
+/** Marks a message from LabGuide's own fixed rules (safety stops, built-in checks). */
+export function RulesBadge() {
+  return (
+    <span className="badge-ai badge-rules" title="Written by LabGuide's fixed rules, not by an AI.">
+      <Icon name="check" size={13} /> LabGuide checks
+    </span>
+  );
+}
+
+const REVIEW_NOTES: Record<NonNullable<StageReview['fallbackReason']>, string> = {
+  not_configured: 'Checked with LabGuide’s built-in checks (Demo mode – no AI tutor on this server).',
+  budget: 'The AI tutor has reached today’s limit, so LabGuide used its built-in checks instead.',
+  unavailable: 'The AI tutor is not available right now, so LabGuide used its built-in checks instead.',
+  invalid_output: 'The AI tutor’s reply could not be used, so LabGuide used its built-in checks instead.',
+  suspicious_input: 'LabGuide found words that are not part of a science answer.',
+};
+
+/** Amber "Not yet" box with the reviewer's guiding questions. Never shows an answer. */
+export function ReviewFeedback({ review }: { review: StageReview }) {
+  return (
+    <div className="issue issue-hint review-feedback" role="status">
+      <span className="tag">Not yet</span>
+      <div>
+        <p style={{ margin: 0 }}>
+          <strong>Your answer needs a little more work before you move on.</strong> Think about{' '}
+          {review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}, change your answer, then press Next again.
+        </p>
+        <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem' }}>
+          {review.feedbackQuestions.map((q) => <li key={q}>{q}</li>)}
+        </ul>
+        <p className="hint-text" style={{ margin: '0.4rem 0 0' }}>
+          {review.source === 'ai' ? <AiBadge text="Checked by the AI tutor (DeepSeek)" /> : <RulesBadge />}{' '}
+          {review.fallbackReason && REVIEW_NOTES[review.fallbackReason]}
+        </p>
+      </div>
+    </div>
   );
 }
 

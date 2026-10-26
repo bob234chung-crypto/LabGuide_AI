@@ -2,14 +2,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   safetyChecklist,
   validatePlan,
+  type AppStage,
   type ChatMessage,
   type ChecklistItem,
   type Plan,
   type PlanStage,
   type PlanValidation,
+  type ReviewedStage,
   type Session,
+  type StageReview,
 } from '@labguide/shared';
 import { api, ApiError } from './api';
+import { useRequestGate } from './hooks';
+import { refreshProviderStatus } from './providerStatus';
 import { useSaveStatus } from './saveStatus';
 
 export type SaveState = 'saved' | 'saving' | 'error';
@@ -26,6 +31,8 @@ interface SessionCtx {
   retrySave: () => void;
   setChat: (fn: (chat: ChatMessage[]) => ChatMessage[]) => void;
   replaceSession: (s: Session) => void;
+  /** Takes the server's reviews, chat and stage without touching local (possibly unsaved) answers. */
+  applyServer: (s: Session) => void;
 }
 
 type StageValue<S extends PlanStage> = S extends 'theme'
@@ -136,10 +143,56 @@ export function SessionProvider({ initial, children }: { initial: Session; child
       retrySave: () => void doFlush(),
       setChat: (fn) => setSession((prev) => ({ ...prev, chat: fn(prev.chat) })),
       replaceSession: (s) => setSession(s),
+      applyServer: (s) =>
+        setSession((prev) => ({
+          ...prev,
+          stageReviews: s.stageReviews,
+          chat: s.chat,
+          currentStage: s.currentStage,
+          updatedAt: s.updatedAt,
+        })),
     }),
     [session, saveState, update, doFlush],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export type AdvanceResult = { ok: true } | { ok: false; failedStage?: ReviewedStage };
+
+/**
+ * Moves forward through the server, which runs the deterministic rules and then the quality
+ * review of the stages being passed. A failed review comes back with guiding questions,
+ * which are stored on the session (and shown by the tutor).
+ */
+export function useAdvance() {
+  const { session, flush, applyServer } = useSession();
+  const { gate, busy } = useRequestGate();
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(target: AppStage, method?: 'canvas'): Promise<AdvanceResult> {
+    setError(null);
+    await flush();
+    try {
+      const res = await api.setProgress(session.id, target, method);
+      applyServer(res.session);
+      return { ok: true };
+    } catch (e) {
+      if (e instanceof ApiError && e.body.error === 'review_failed') {
+        applyServer(e.body.session as Session);
+        if (e.body.review && (e.body.review as StageReview).fallbackReason === 'budget') void refreshProviderStatus();
+        return { ok: false, failedStage: e.body.stage as ReviewedStage };
+      }
+      setError(errorMessage(e));
+      return { ok: false };
+    }
+  }
+
+  return {
+    advance: async (target: AppStage, method?: 'canvas') => (await gate.tryRun(() => run(target, method))) ?? { ok: false as const },
+    busy,
+    error,
+    clearError: () => setError(null),
+  };
 }
 
 export function errorMessage(err: unknown): string {

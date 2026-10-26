@@ -5,9 +5,11 @@ plan a fair test across seven stages (Theme, Hypothesis, Variables, Apparatus, P
 Safety, Summary), then build a 2D sectional diagram on a drag-and-drop canvas and export it
 as PNG or PDF.
 
-**Everything AI-related in this prototype runs in Demo mode.** The tutor replies come from
-deterministic templates, the Poe connection is simulated, and no request is ever sent to Poe,
-Gemini or any other provider.
+**AI tutor:** when `DEEPSEEK_API_KEY` is set on the server, tutor replies and stage quality
+reviews come from DeepSeek (`deepseek-chat`) through the LabGuide server, labelled
+"AI tutor (DeepSeek)". Without the key, everything runs in **Demo mode**: replies come from
+deterministic templates and nothing is sent to any provider. The Poe connection is always
+simulated, and Gemini is a stub.
 
 ## Requirements
 
@@ -55,8 +57,8 @@ The e2e script needs both dev servers running. Options: `--only desktop|mobile`,
 
 The app deploys as one Vercel project: the web app is served as static files and the Express
 API runs as one serverless function under `/api`. `npm run vercel-build` builds both into
-`.vercel/output` (Vercel Build Output API) and then runs `check:bundle-secrets`. It stays in
-Demo mode: no provider keys are needed and no provider is ever called.
+`.vercel/output` (Vercel Build Output API) and then runs `check:bundle-secrets`. Without
+`DEEPSEEK_API_KEY` it stays in Demo mode and no provider is ever called.
 
 In Vercel, choose Add New, Project and import the `LabGuide_AI` repository. Project settings
 (most come from `vercel.json`):
@@ -87,6 +89,8 @@ Environment variables (Settings, Environment Variables):
 | `LABGUIDE_VAULT_KEY` | Required. A different random string of at least 32 characters |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Set automatically by the Upstash integration |
 | `LABGUIDE_PUBLIC_ORIGIN` | Optional. Extra origin allowed by CORS, e.g. `https://labguide.school.example` |
+| `DEEPSEEK_API_KEY` | Optional. Turns on the DeepSeek AI tutor (Production and Preview). Redeploy after adding it |
+| `LABGUIDE_DAILY_SPEND_CAP_USD` | Optional. Lower the shared daily AI spend cap (default and maximum 1) |
 
 Generate each secret with `openssl rand -hex 32` (macOS/Linux Terminal), or in any browser
 press F12, open Console and run:
@@ -125,6 +129,46 @@ scripts/          e2e-journey.mjs, check-bundle-secrets.mjs, find-overflow.mjs
 The rule engine runs in both places: the browser uses it for instant feedback, and the server
 re-runs it on every save. The server is authoritative. It refuses to unlock a later stage or
 the diagram stage while a safety block is open (HTTP 409).
+
+## DeepSeek AI tutor
+
+File: `packages/server/src/providers/deepseek.ts` (`DeepSeekAdapter`), with the output guards in
+`providers/guard.ts` and `providers/schema.ts`, and the spend cap in `src/spend.ts`.
+
+- **Provider choice:** DeepSeek is used when `DEEPSEEK_API_KEY` exists on the server, otherwise
+  Demo. The URL (`https://api.deepseek.com`) and model (`deepseek-chat`) are fixed in
+  `config.ts`. The admin API can still force `demo`.
+- **Calls:** OpenAI-compatible Chat Completions with JSON output, 10 s timeout, one retry,
+  350/250 output-token limits, and logs that record only status codes, token counts and timing.
+- **Prompts:** server-only. Student text goes inside a JSON `<student_data>` block that the
+  prompt marks as untrusted. Email addresses, phone numbers and HKID numbers are removed first.
+  Nicknames and student IDs are never sent.
+- **Output checks:** server-side schema, at most 3 questions (a longer question list is
+  trimmed, and text with more than 3 questions is rejected), and an answer-leak guard. The guard
+  cuts sentences that write the hypothesis, name the student's variables, add apparatus reasons,
+  offer wording to copy, overlap a theme's answer templates, or suggest home experiments. It
+  rejects numbered method steps. A rejected reply falls back to the safe template (labelled
+  Demo mode). Safety stops always come from the deterministic rules.
+- **Spend cap:** US$1 per day in total (Hong Kong date), counted in Redis in micro-dollars.
+  Each call reserves its worst-case cost first (atomic `INCRBY`) and is then corrected to real
+  token usage, using prices set above DeepSeek's. When the cap is reached, or Redis cannot be
+  read, the Demo tutor answers and is labelled "Demo mode – daily AI limit reached".
+  Student work is saved first and never lost.
+
+## Stage gating
+
+Moving forward (`PUT /api/sessions/:id/progress`, used by Next and Generate Sectional
+Diagram) is enforced on the server:
+
+1. The deterministic rules and safety blocks run first and always win.
+2. Each reviewed stage (hypothesis, variables, apparatus, procedure, then the whole plan before
+   the diagram) needs a passed quality review for the current answers. The review returns
+   `{ passed, feedbackQuestions[] }`. The AI can only add a block.
+3. When the AI is not configured, over budget, failing or unusable, the stricter built-in
+   checks (`packages/shared/src/rules/quality.ts`) decide, and the result says so.
+4. A failed review answers `409 review_failed` with guiding questions (never the answer) and
+   adds them to the tutor chat. The verdict is stored with a fingerprint of the answers, so
+   editing an answer re-opens the check for that stage and the stages after it.
 
 ## Where the real Poe and Gemini adapters plug in
 
@@ -165,7 +209,9 @@ keys. The Settings page shows Gemini as "managed by your school".
 
 ### Choosing the active provider
 
-Set `LABGUIDE_PROVIDER=demo|poe|gemini`, or change it at runtime through the admin API (below).
+By default the server uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise Demo. Set
+`LABGUIDE_PROVIDER=demo|poe|gemini|deepseek` to override it, or change it at runtime through
+the admin API (below).
 Real providers are only used when configured. Otherwise the app stays in Demo mode and says so.
 
 ## Environment variables (server only)
@@ -182,7 +228,9 @@ Real providers are only used when configured. Otherwise the app stays in Demo mo
 | `LABGUIDE_DATA_DIR` | File store location (default `packages/server/data`) |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`) | Use Upstash Redis instead of the file store |
 | `LABGUIDE_DAILY_TURN_BUDGET` | Tutor turns per student per day (default 300) |
-| `LABGUIDE_PROVIDER` | `demo` (default), `poe`, `gemini` |
+| `LABGUIDE_PROVIDER` | `demo`, `poe`, `gemini`, `deepseek` (default: `deepseek` with a key, else `demo`) |
+| `DEEPSEEK_API_KEY` | DeepSeek API key (server only) |
+| `LABGUIDE_DAILY_SPEND_CAP_USD` | Shared daily AI spend cap in USD (default and maximum 1) |
 | `POE_CLIENT_ID`, `POE_CLIENT_SECRET`, `POE_REDIRECT_URI`, `POE_MODEL` | Poe OAuth app |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Gemini API |
 
@@ -193,8 +241,8 @@ None of these reach the browser bundle. `npm run check:bundle-secrets` verifies 
 All admin routes require `Authorization: Bearer $LABGUIDE_ADMIN_TOKEN`. Without the token they
 return 404.
 
-- `GET /api/admin/provider-config`: the active provider and whether each one is configured (no secrets)
-- `PUT /api/admin/provider-config` `{ "active": "demo" | "poe" | "gemini" }`
+- `GET /api/admin/provider-config`: the chosen and effective provider, whether each one is configured, and today's AI spend (no secrets)
+- `PUT /api/admin/provider-config` `{ "active": "demo" | "poe" | "gemini" | "deepseek" }`
 - `POST /api/admin/provider-test`: health check of the active provider (demo returns OK without a request)
 
 ## Security and privacy notes
@@ -217,7 +265,7 @@ return 404.
 
 - Local dev uses a JSON file store with atomic writes and in-memory rate limits. With Upstash Redis (Vercel) each student is one JSON document with a 30-day TTL, and requests for one student are serialised with a short lock. Rate limits are then fixed windows shared by all instances.
 - TLS is expected from a reverse proxy (`LABGUIDE_SECURE_COOKIES=true`).
-- Poe and Gemini network calls are not implemented (stubs throw `not_configured`).
+- Poe and Gemini network calls are not implemented (stubs throw `not_configured`). DeepSeek is real.
 - Canvas rotation is in 90° steps. Main labels are auto-placed in the margins; extra labels are draggable. No pinch-zoom (zoom buttons and fit-to-view instead).
 - A "Boiling tube of ethanol" apparatus item was added so the ethanol-near-flame canvas block can be shown.
 - Missing gloves or tongs near hot glassware is a completeness hint on the canvas, not a block.

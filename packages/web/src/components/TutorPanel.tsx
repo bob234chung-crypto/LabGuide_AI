@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AppStage, ChatMessage, ChatRequest } from '@labguide/shared';
+import type { AppStage, ChatMessage, ChatRequest, TutorReply } from '@labguide/shared';
 import { api } from '../api';
 import { useSession, errorMessage } from '../session';
-import { DemoBadge, ErrorState, Icon } from './ui';
+import { AiBadge, DemoBadge, ErrorState, Icon, RulesBadge } from './ui';
 import { useRequestGate } from '../hooks';
+import { refreshProviderStatus, usesRealAi, useProviderStatus } from '../providerStatus';
+
+/** Says honestly who wrote each reply. Only real DeepSeek replies get the AI label. */
+function ReplyLabel({ m }: { m: TutorReply }) {
+  if (m.provider === 'deepseek') return <AiBadge />;
+  if (m.provider === 'rules') return <RulesBadge />;
+  if (m.fallback === 'budget') return <DemoBadge text="Demo mode – daily AI limit reached" />;
+  if (m.fallback === 'invalid_output') return <DemoBadge text="Demo mode – built-in safe reply" />;
+  return m.demo ? <DemoBadge /> : null;
+}
 
 export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onClose?: () => void; headingId: string }) {
   const { session, setChat, flush } = useSession();
+  const status = useProviderStatus();
   const [text, setText] = useState('');
   const gate = useRequestGate();
   const busy = gate.busy();
@@ -21,6 +32,9 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
       await flush();
       const res = await api.chat(session.id, req);
       setChat((chat) => [...chat, ...res.messages]);
+      if (res.messages.some((m) => m.role === 'tutor' && m.fallback === 'budget') && usesRealAi(status)) {
+        void refreshProviderStatus();
+      }
       if (req.type === 'message') setText('');
     } catch (err) {
       const e = err as { body?: { saved?: ChatMessage[] } };
@@ -56,7 +70,14 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
       <div className="tutor-head">
         <div>
           <h2 id={headingId} style={{ margin: 0, fontSize: '1.1rem' }}>Tutor</h2>
-          <DemoBadge text="Demo mode – simulated tutor" />
+          {status &&
+            (usesRealAi(status) ? (
+              <AiBadge />
+            ) : status.deepseek.budgetReached ? (
+              <DemoBadge text="Demo mode – today’s AI limit reached" />
+            ) : (
+              <DemoBadge text="Demo mode – simulated tutor" />
+            ))}
         </div>
         {onClose && (
           <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close tutor">
@@ -82,7 +103,7 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
                 ) : (
                   'Tutor'
                 )}
-                {m.demo && <DemoBadge />}
+                <ReplyLabel m={m} />
               </div>
               {m.text && <p style={{ margin: 0 }}>{m.text}</p>}
               {m.questions.length > 0 && (

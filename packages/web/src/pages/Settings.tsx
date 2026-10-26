@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Me, ProviderStatus } from '@labguide/shared';
 import { api } from '../api';
 import { errorMessage } from '../session';
-import { DemoBadge, ErrorState, Icon, Modal } from '../components/ui';
+import { AiBadge, DemoBadge, ErrorState, Icon, Modal } from '../components/ui';
+import { setProviderStatus } from '../providerStatus';
 
 const POE_RESULT: Record<string, { text: string; ok: boolean }> = {
   demo_connected: { text: 'Simulated connection created. Demo mode – no real connection was made.', ok: true },
@@ -32,6 +33,7 @@ export function Settings() {
     try {
       const [s, m] = await Promise.all([api.providerStatus(), api.me()]);
       setStatus(s);
+      setProviderStatus(s);
       setMe(m);
       setNickname(m.nickname);
     } catch (e) {
@@ -69,13 +71,29 @@ export function Settings() {
           <section className="card stack" aria-labelledby="prov-h">
             <h2 id="prov-h">Tutor provider</h2>
             <div className="status-row">
-              <strong>Current provider:</strong> {status.activeProvider === 'demo' ? 'Demo tutor (simulated)' : status.activeProvider}
-              {status.demoMode && <DemoBadge />}
+              <strong>Current provider:</strong>{' '}
+              {status.activeProvider === 'deepseek'
+                ? `DeepSeek (${status.deepseek.model ?? 'deepseek-chat'})`
+                : status.activeProvider === 'demo'
+                  ? 'Demo tutor (simulated)'
+                  : status.activeProvider}
+              {status.activeProvider === 'deepseek' && !status.demoMode ? <AiBadge /> : status.demoMode && <DemoBadge />}
             </div>
             <div className="status-row">
-              <span className="status-dot" data-kind="sim" aria-hidden="true" />
-              <strong>Connection:</strong> Demo mode – no real connection
+              <span className="status-dot" data-kind={status.deepseek.state === 'connected' ? 'ok' : status.activeProvider === 'demo' ? 'sim' : 'off'} aria-hidden="true" />
+              <strong>Connection:</strong>{' '}
+              {status.activeProvider === 'deepseek' ? status.deepseek.label : 'Demo mode – no real connection'}
             </div>
+            {status.deepseek.budgetReached && (
+              <p className="notice" style={{ margin: 0 }}>
+                Today’s AI limit has been reached. The Demo tutor is used until midnight (Hong Kong time). Your work is saved.
+              </p>
+            )}
+            {status.activeProvider === 'deepseek' && status.deepseek.state === 'configured_unreachable' && (
+              <p className="notice" style={{ margin: 0 }}>
+                DeepSeek is not answering right now. If the tutor fails, press Retry or Continue later. Your work is saved.
+              </p>
+            )}
             <p className="muted" style={{ margin: 0 }}>
               Your school or app administrator chooses the provider on the server. You cannot change it here, and
               this app never asks you for an API key.
@@ -85,6 +103,27 @@ export function Settings() {
                 onChange={(e) => act(async () => setStatus(await api.setSimulateErrors(e.target.checked)), e.target.checked ? 'Tutor errors will be simulated.' : 'Tutor errors are off.')} />
               <span>Simulate a tutor error (to try the Retry / Continue later screen) <DemoBadge /></span>
             </label>
+          </section>
+
+          <section className="card stack" aria-labelledby="ds-h">
+            <h2 id="ds-h">DeepSeek AI tutor</h2>
+            <div className="status-row">
+              <span className="status-dot" data-kind={status.deepseek.state === 'connected' ? 'ok' : 'off'} aria-hidden="true" />
+              <strong>Status:</strong> {status.deepseek.label}
+            </div>
+            <p style={{ margin: 0 }}>
+              The app administrator sets up DeepSeek on the LabGuide server. Students never sign in to DeepSeek or
+              enter a key. When it is on, it writes the tutor’s questions and checks whether each stage is ready.
+            </p>
+            <h3 style={{ margin: '0.25rem 0 0', fontSize: '1rem' }}>What this means for your data</h3>
+            <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
+              <li><strong>Provider:</strong> DeepSeek, an AI company based in mainland China.</li>
+              <li><strong>Where:</strong> DeepSeek’s servers are in mainland China. What is sent is processed and stored there, under the laws of mainland China.</li>
+              <li><strong>What is sent:</strong> your topic, your answers for the stage you are working on (and the earlier stages it depends on), your messages to the tutor, and the last few tutor messages. LabGuide removes email addresses, phone numbers and ID numbers first.</li>
+              <li><strong>What is never sent:</strong> your name, your nickname, your student ID or your school. Please do not type your name or other personal details in your answers.</li>
+              <li><strong>How long:</strong> LabGuide deletes your work {status.retentionDays} days after you last use it. DeepSeek keeps what it receives under its own privacy policy, and LabGuide cannot delete data that DeepSeek already has.</li>
+              <li><strong>Cost:</strong> the app pays for DeepSeek, up to US${status.deepseek.dailyCapUsd.toFixed(2)} a day for all students together. After that, the Demo tutor is used until the next day, and it is clearly labelled.</li>
+            </ul>
           </section>
 
           <section className="card stack" aria-labelledby="poe-h">
@@ -123,7 +162,7 @@ export function Settings() {
               <li>You use LabGuide with an anonymous student ID{me ? ` (${me.studentId.slice(0, 8)}…)` : ''}. We do not ask for your name or school.</li>
               <li>We keep only what you need to continue: your plan answers, diagrams and tutor messages.</li>
               <li><strong>Your sessions and diagrams are deleted {status.retentionDays} days after you last use them.</strong></li>
-              <li>When a real provider is used, your current stage answers and recent tutor messages are sent to it through the LabGuide server. In Demo mode nothing is sent anywhere.</li>
+              <li>When a real provider is used, your current stage answers and recent tutor messages are sent to it through the LabGuide server (see “DeepSeek AI tutor” above). In Demo mode nothing is sent anywhere.</li>
               <li>Provider keys and tokens stay on the server, encrypted. They never reach your browser.</li>
             </ul>
             <div>
@@ -140,10 +179,13 @@ export function Settings() {
             <h2 id="bill-h">Points and billing</h2>
             <p style={{ margin: 0 }}>
               If your school turns on Poe, each tutor reply uses points from <strong>your own Poe account</strong>.
-              If your school uses Gemini, the school pays and you use no points. LabGuide never switches you between
+              If your school uses Gemini or DeepSeek, the app pays and you use no points. LabGuide never switches you between
               providers without telling you, because their costs and privacy rules are different.
             </p>
-            <p className="muted" style={{ margin: 0 }}>Demo mode uses no points.</p>
+            <p className="muted" style={{ margin: 0 }}>
+              Demo mode uses no points and sends nothing. When the daily DeepSeek limit is reached, LabGuide switches to the
+              Demo tutor (which sends nothing) and labels every reply “Demo mode”.
+            </p>
           </section>
         </div>
       )}

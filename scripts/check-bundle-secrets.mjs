@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Fails if the built frontend bundle contains provider secrets, secret env names or provider endpoints.
+// Fails if the built frontend bundle contains provider secrets, secret env names, provider endpoints or the
+// server-only system prompts.
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -13,15 +14,18 @@ const patterns = [
   /POE_CLIENT_SECRET/,
   /POE_CLIENT_ID/,
   /GEMINI_API_KEY/,
+  /DEEPSEEK_API_KEY/,
   /LABGUIDE_(VAULT_KEY|COOKIE_SECRET|ADMIN_TOKEN)/,
   /AIza[0-9A-Za-z_-]{20,}/,
   /sk-[A-Za-z0-9]{20,}/,
   /generativelanguage\.googleapis\.com/,
   /api\.poe\.com/,
+  /api\.deepseek\.com/,
+  /You are LabGuide/,
   /Bearer\s+[A-Za-z0-9._-]{16,}/,
 ];
 
-const envSecrets = ['POE_CLIENT_SECRET', 'GEMINI_API_KEY', 'LABGUIDE_VAULT_KEY', 'LABGUIDE_COOKIE_SECRET', 'LABGUIDE_ADMIN_TOKEN']
+const envSecrets = ['POE_CLIENT_SECRET', 'GEMINI_API_KEY', 'DEEPSEEK_API_KEY', 'LABGUIDE_VAULT_KEY', 'LABGUIDE_COOKIE_SECRET', 'LABGUIDE_ADMIN_TOKEN']
   .map((k) => process.env[k])
   .filter((v) => v && v.length >= 8);
 

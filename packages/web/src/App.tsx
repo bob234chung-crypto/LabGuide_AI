@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
-import { DemoBadge, Glossary, Icon } from './components/ui';
+import { AiBadge, DemoBadge, Glossary, Icon } from './components/ui';
+import { usesRealAi, useProviderStatus } from './providerStatus';
 import { SaveIndicator, SaveStatusProvider } from './saveStatus';
 import { Welcome } from './pages/Welcome';
 import { Settings } from './pages/Settings';
@@ -15,6 +16,12 @@ function Logo() {
   );
 }
 
+function TutorModeBadge() {
+  const status = useProviderStatus();
+  if (!status) return null;
+  return usesRealAi(status) ? <AiBadge /> : <DemoBadge />;
+}
+
 export function App() {
   const [glossary, setGlossary] = useState(false);
   return (
@@ -24,7 +31,7 @@ export function App() {
         <Link to="/" className="brand" aria-label="LabGuide AI home">
           <Logo /> <span>LabGuide AI</span>
         </Link>
-        <DemoBadge />
+        <TutorModeBadge />
         <span className="spacer" />
         <SaveIndicator />
         <button className="btn btn-ghost" onClick={() => setGlossary(true)} aria-label="Open glossary">

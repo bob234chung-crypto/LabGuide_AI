@@ -1,13 +1,21 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { PLAN_STAGES, STAGE_TITLES, apparatusName, themeTitle, type PlanStage } from '@labguide/shared';
-import { api } from '../../api';
-import { errorMessage, useSession } from '../../session';
-import { ErrorState, Icon, SafetyBlocks } from '../../components/ui';
+import {
+  PLAN_STAGES,
+  STAGE_TITLES,
+  apparatusName,
+  canOpenDiagram,
+  stageAnswerKey,
+  stageDone,
+  themeTitle,
+  type PlanStage,
+} from '@labguide/shared';
+import { useAdvance, useSession } from '../../session';
+import { ErrorState, Icon, ReviewFeedback, SafetyBlocks } from '../../components/ui';
 
 function Section({ stage, children }: { stage: PlanStage; children: ReactNode }) {
-  const { session, validation } = useSession();
-  const ok = validation.stages[stage].complete;
+  const { session, validation, plan } = useSession();
+  const ok = stageDone(validation, plan, session.stageReviews, stage);
   return (
     <div className="answer-card" style={{ borderLeftColor: ok ? 'var(--teal)' : 'var(--amber-line)' }}>
       <div className="card-title">
@@ -70,25 +78,18 @@ export function PlanSummaryContent() {
 }
 
 export function SummaryStage() {
-  const { session, validation, flush } = useSession();
+  const { session, validation, plan } = useSession();
   const nav = useNavigate();
-  const [err, setErr] = useState<string | null>(null);
+  const { advance, busy, error } = useAdvance();
   const incomplete = PLAN_STAGES.filter((s) => s !== 'summary' && !validation.stages[s].complete);
+  const saved = session.stageReviews?.summary;
+  const review = saved && saved.answerKey === stageAnswerKey(plan, 'summary') ? saved : undefined;
+  const ready = canOpenDiagram(validation, plan, session.stageReviews);
 
   async function generate() {
-    setErr(null);
-    await flush();
-    try {
-      const res = await api.review(session.id);
-      if (!res.validation.canGenerateDiagram) {
-        setErr('The server found something to fix. Check the stages marked “Needs work”.');
-        return;
-      }
-      await api.setProgress(session.id, 'diagram');
-      nav(`/s/${session.id}/diagram`);
-    } catch (e) {
-      setErr(errorMessage(e));
-    }
+    const r = await advance('diagram');
+    if (r.ok) nav(`/s/${session.id}/diagram`);
+    else if (r.failedStage && r.failedStage !== 'summary') nav(`/s/${session.id}/${r.failedStage}`);
   }
 
   return (
@@ -98,17 +99,21 @@ export function SummaryStage() {
       <SafetyBlocks issues={validation.safetyBlocks} />
       <PlanSummaryContent />
       <div className="card stack">
-        <button className="btn btn-primary" onClick={generate} disabled={!validation.canGenerateDiagram} aria-describedby="gen-why">
-          <Icon name="pencil" /> Generate Sectional Diagram
+        {review && !review.passed && validation.canGenerateDiagram && <ReviewFeedback review={review} />}
+        <button className="btn btn-primary" onClick={() => void generate()} disabled={!validation.canGenerateDiagram}
+          aria-busy={busy} aria-describedby="gen-why">
+          <Icon name="pencil" /> {busy ? 'Checking your whole plan…' : 'Generate Sectional Diagram'}
         </button>
         <p id="gen-why" className="hint-text" style={{ margin: 0 }} aria-live="polite">
-          {validation.canGenerateDiagram
+          {ready
             ? 'Your plan passed every check. You can now build your diagram.'
-            : validation.safetyBlocks.length
+            : validation.canGenerateDiagram
+              ? 'The tutor will check your whole plan before you build the diagram.'
+              : validation.safetyBlocks.length
               ? 'Locked: fix the safety problem first.'
               : `Locked: finish ${incomplete.map((s) => STAGE_TITLES[s]).join(', ')} first.`}
         </p>
-        {err && <ErrorState message={err} onRetry={generate} />}
+        {error && <ErrorState message={error} onRetry={() => void generate()} />}
       </div>
       <div className="stage-footer">
         <Link className="btn" to={`/s/${session.id}/safety`}><Icon name="arrowLeft" /> Back</Link>

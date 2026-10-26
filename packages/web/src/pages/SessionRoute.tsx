@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { PLAN_STAGES, STAGE_TITLES, isAppStageUnlocked, isStageUnlocked, type AppStage, type PlanStage, type Session } from '@labguide/shared';
+import {
+  PLAN_STAGES,
+  STAGE_TITLES,
+  canOpenDiagram,
+  gatedFurthest,
+  isAppStageUnlocked,
+  isGatedStageUnlocked,
+  isReviewedStage,
+  reviewPassed,
+  stageAnswerKey,
+  stageDone,
+  type AppStage,
+  type PlanStage,
+  type Session,
+} from '@labguide/shared';
 import { api } from '../api';
-import { ErrorState, Icon } from '../components/ui';
+import { ErrorState, Icon, ReviewFeedback } from '../components/ui';
 import { TutorPanel } from '../components/TutorPanel';
-import { SessionProvider, errorMessage, useSession } from '../session';
+import { SessionProvider, errorMessage, useAdvance, useSession } from '../session';
 import { useIsDesktop } from '../hooks';
 import { ThemeStage } from './stages/ThemeStage';
 import { HypothesisStage } from './stages/HypothesisStage';
@@ -70,16 +84,17 @@ function currentStageFromPath(path: string): { stage: AppStage; canvas: boolean 
 }
 
 export function ProgressBar({ stage }: { stage: AppStage }) {
-  const { validation } = useSession();
+  const { validation, plan, session } = useSession();
   const idx = stage === 'diagram' ? PLAN_STAGES.length : PLAN_STAGES.indexOf(stage);
-  const done = PLAN_STAGES.filter((s) => validation.stages[s].complete).length;
+  const isDone = (s: PlanStage) => stageDone(validation, plan, session.stageReviews, s);
+  const done = PLAN_STAGES.filter(isDone).length;
   return (
     <nav className="progress" aria-label="Progress">
       <ol>
         {PLAN_STAGES.map((s, i) => (
-          <li key={s} data-state={i === idx ? 'current' : validation.stages[s].complete ? 'done' : 'todo'} title={STAGE_TITLES[s]}>
+          <li key={s} data-state={i === idx ? 'current' : isDone(s) ? 'done' : 'todo'} title={STAGE_TITLES[s]}>
             <span className="sr-only">
-              {STAGE_TITLES[s]}: {i === idx ? 'current stage' : validation.stages[s].complete ? 'complete' : 'not complete'}
+              {STAGE_TITLES[s]}: {i === idx ? 'current stage' : isDone(s) ? 'complete' : 'not complete'}
             </span>
           </li>
         ))}
@@ -92,15 +107,16 @@ export function ProgressBar({ stage }: { stage: AppStage }) {
 }
 
 function StageNav({ stage }: { stage: AppStage }) {
-  const { session, validation } = useSession();
+  const { session, validation, plan } = useSession();
+  const reviews = session.stageReviews;
   const items: { key: AppStage; title: string; unlocked: boolean; done: boolean }[] = [
     ...PLAN_STAGES.map((s) => ({
       key: s as AppStage,
       title: STAGE_TITLES[s],
-      unlocked: isStageUnlocked(validation, s),
-      done: validation.stages[s].complete,
+      unlocked: isGatedStageUnlocked(validation, plan, reviews, s),
+      done: stageDone(validation, plan, reviews, s),
     })),
-    { key: 'diagram', title: 'Diagram', unlocked: validation.canGenerateDiagram, done: false },
+    { key: 'diagram', title: 'Diagram', unlocked: canOpenDiagram(validation, plan, reviews), done: false },
   ];
   return (
     <nav className="stage-nav card" aria-label="Stages">
@@ -117,7 +133,7 @@ function StageNav({ stage }: { stage: AppStage }) {
               <span className="locked" aria-disabled="true">
                 <span className="step-dot"><Icon name="lock" size={13} /></span>
                 {it.title}
-                <span className="sr-only"> (locked: finish earlier stages first)</span>
+                <span className="sr-only"> (locked: finish and check the earlier stages first)</span>
               </span>
             )}
           </li>
@@ -128,30 +144,32 @@ function StageNav({ stage }: { stage: AppStage }) {
 }
 
 function MobileStageSelect({ stage }: { stage: AppStage }) {
-  const { session, validation } = useSession();
+  const { session, validation, plan } = useSession();
+  const reviews = session.stageReviews;
+  const open = (s: AppStage) => isGatedStageUnlocked(validation, plan, reviews, s);
   const nav = useNavigate();
   return (
     <div className="mobile-stage-select">
       <label htmlFor="stage-jump" className="sr-only">Go to stage</label>
       <select id="stage-jump" value={stage} onChange={(e) => nav(`/s/${session.id}/${e.target.value}`)}>
         {PLAN_STAGES.map((s, i) => (
-          <option key={s} value={s} disabled={!isStageUnlocked(validation, s)}>
-            {i + 1}. {STAGE_TITLES[s]} {validation.stages[s].complete ? '✓' : isStageUnlocked(validation, s) ? '' : '(locked)'}
+          <option key={s} value={s} disabled={!open(s)}>
+            {i + 1}. {STAGE_TITLES[s]} {stageDone(validation, plan, reviews, s) ? '✓' : open(s) ? '' : '(locked)'}
           </option>
         ))}
-        <option value="diagram" disabled={!validation.canGenerateDiagram}>8. Diagram {validation.canGenerateDiagram ? '' : '(locked)'}</option>
+        <option value="diagram" disabled={!open('diagram')}>8. Diagram {open('diagram') ? '' : '(locked)'}</option>
       </select>
     </div>
   );
 }
 
 function SessionLayout() {
-  const { session, validation, flush } = useSession();
+  const { session, validation, flush, plan } = useSession();
   const loc = useLocation();
   const desktop = useIsDesktop();
   const [drawer, setDrawer] = useState(false);
   const { stage, canvas } = currentStageFromPath(loc.pathname);
-  const locked = !isAppStageUnlocked(validation, stage);
+  const locked = !isGatedStageUnlocked(validation, plan, session.stageReviews, stage);
 
   useEffect(() => {
     // The server answers 409 for a locked stage, so only record progress the plan allows,
@@ -172,17 +190,7 @@ function SessionLayout() {
         {!canvas && <MobileStageSelect stage={stage} />}
         <ProgressBar stage={stage} />
         {locked ? (
-          <div className="card stack">
-            <h1>This stage is locked</h1>
-            <p>
-              {stage === 'diagram'
-                ? 'Finish every stage and fix any safety problems to unlock the diagram.'
-                : 'Finish the earlier stages first. You can always go back to edit.'}
-            </p>
-            <Link className="btn btn-primary" to={`/s/${session.id}/${validation.furthestUnlocked}`}>
-              Go to {STAGE_TITLES[validation.furthestUnlocked]}
-            </Link>
-          </div>
+          <LockedStage stage={stage} />
         ) : (
           <Routes>
             {PLAN_STAGES.map((s) => {
@@ -221,54 +229,100 @@ function SessionLayout() {
   );
 }
 
-export function StageFooter({ stage }: { stage: PlanStage }) {
-  const { session, validation, flush } = useSession();
+/** Shown for a stage the student may not open yet. */
+function LockedStage({ stage }: { stage: AppStage }) {
+  const { session, validation, plan } = useSession();
   const nav = useNavigate();
+  const { advance, busy, error } = useAdvance();
+  const furthest = gatedFurthest(validation, plan, session.stageReviews);
+  // The rules already allow this stage; only a quality check (for example of answers saved
+  // before checks existed, or edited since) is missing.
+  const needsCheckOnly = isAppStageUnlocked(validation, stage);
+
+  async function check() {
+    const r = await advance(stage);
+    if (!r.ok && r.failedStage) nav(`/s/${session.id}/${r.failedStage}`);
+  }
+
+  return (
+    <div className="card stack">
+      <h1>This stage is locked</h1>
+      <p>
+        {needsCheckOnly
+          ? 'The tutor needs to check your earlier answers before you continue. Your work is saved.'
+          : stage === 'diagram'
+            ? 'Finish every stage and fix any safety problems to unlock the diagram.'
+            : 'Finish the earlier stages first. You can always go back to edit.'}
+      </p>
+      <div className="btn-row">
+        {needsCheckOnly && (
+          <button className="btn btn-primary" aria-busy={busy} onClick={() => void check()}>
+            <Icon name="check" /> {busy ? 'Checking your answers…' : 'Check my answers and continue'}
+          </button>
+        )}
+        <Link className={`btn ${needsCheckOnly ? '' : 'btn-primary'}`} to={`/s/${session.id}/${furthest}`}>
+          Go to {STAGE_TITLES[furthest]}
+        </Link>
+      </div>
+      {error && <ErrorState message={error} onRetry={() => void check()} />}
+    </div>
+  );
+}
+
+export function StageFooter({ stage }: { stage: PlanStage }) {
+  const { session, validation, plan } = useSession();
+  const nav = useNavigate();
+  const { advance, busy, error } = useAdvance();
   const idx = PLAN_STAGES.indexOf(stage);
   const prev = PLAN_STAGES[idx - 1];
   const next = PLAN_STAGES[idx + 1];
   const sv = validation.stages[stage];
   const blocked = sv.issues.some((i) => i.severity === 'safety_block');
-  const [err, setErr] = useState<string | null>(null);
+  const reviewedStage = isReviewedStage(stage) && stage !== 'summary' ? stage : null;
+  const saved = reviewedStage ? session.stageReviews?.[reviewedStage] : undefined;
+  const review = reviewedStage && saved && saved.answerKey === stageAnswerKey(plan, reviewedStage) ? saved : undefined;
+  const passed = !reviewedStage || reviewPassed(plan, session.stageReviews, reviewedStage);
 
   async function goNext() {
     if (!next) return;
-    setErr(null);
-    await flush();
-    try {
-      await api.setProgress(session.id, next);
-      nav(`/s/${session.id}/${next}`);
-    } catch (e) {
-      setErr(errorMessage(e));
-    }
+    const r = await advance(next);
+    if (r.ok) nav(`/s/${session.id}/${next}`);
   }
   const firstRequired = sv.issues.find((i) => i.required);
   return (
-    <div className="stage-footer">
-      {prev ? (
-        <Link className="btn" to={`/s/${session.id}/${prev}`}>
-          <Icon name="arrowLeft" /> Back
-        </Link>
-      ) : (
-        <Link className="btn" to="/">
-          <Icon name="arrowLeft" /> Welcome
-        </Link>
-      )}
-      {next && (
-        <button className="btn btn-primary" onClick={goNext} disabled={!sv.complete} aria-describedby={`why-${stage}`}>
-          Next: {STAGE_TITLES[next]} <Icon name="arrowRight" />
-        </button>
-      )}
-      <p id={`why-${stage}`} className="why" aria-live="polite">
-        {sv.complete
-          ? 'This stage is complete. You can come back and edit it at any time.'
-          : blocked
-            ? 'Fix the safety problem above to continue.'
-            : firstRequired
-              ? `To continue: ${firstRequired.message}`
-              : ''}
-      </p>
-      {err && <div style={{ flexBasis: '100%' }}><ErrorState message={err} onRetry={goNext} /></div>}
+    <div className="stack">
+      {review && !review.passed && sv.complete && <ReviewFeedback review={review} />}
+      <div className="stage-footer">
+        {prev ? (
+          <Link className="btn" to={`/s/${session.id}/${prev}`}>
+            <Icon name="arrowLeft" /> Back
+          </Link>
+        ) : (
+          <Link className="btn" to="/">
+            <Icon name="arrowLeft" /> Welcome
+          </Link>
+        )}
+        {next && (
+          <button className="btn btn-primary" onClick={() => void goNext()} disabled={!sv.complete} aria-busy={busy}
+            aria-describedby={`why-${stage}`}>
+            {busy ? 'Checking your answer…' : <>Next: {STAGE_TITLES[next]} <Icon name="arrowRight" /></>}
+          </button>
+        )}
+        <p id={`why-${stage}`} className="why" aria-live="polite">
+          {!sv.complete
+            ? blocked
+              ? 'Fix the safety problem above to continue.'
+              : firstRequired
+                ? `To continue: ${firstRequired.message}`
+                : ''
+            : passed
+              ? 'This stage is complete. You can come back and edit it at any time.'
+              : review && !review.passed
+                ? 'Improve your answer, then press Next again.'
+                : 'Press Next. The tutor will check your answer before you move on.'}
+        </p>
+        {error && <div style={{ flexBasis: '100%' }}><ErrorState message={error} onRetry={() => void goNext()} /></div>}
+      </div>
     </div>
   );
 }
