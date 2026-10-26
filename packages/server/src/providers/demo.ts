@@ -227,7 +227,7 @@ export class DemoAdapter implements TutorProvider {
     };
   }
 
-  /** No model in Demo mode: the stricter built-in quality checks decide. */
+  /** No model in Demo mode: the junior-form checks decide. */
   async reviewPlan(ctx: StageReviewContext): Promise<PlanReview> {
     return heuristicStageReview(ctx.plan, ctx.stage);
   }

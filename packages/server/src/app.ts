@@ -46,6 +46,7 @@ import {
 } from './config.js';
 import { BusyError, FileBackend, RedisBackend, requestScope, type DataBackend } from './datastore.js';
 import { KvError, MemoryKv, UpstashRestKv, type KvClient } from './kv.js';
+import { exampleAnswer } from './examples.js';
 import { SpendMeter } from './spend.js';
 import { log, redactUrl } from './logger.js';
 import { ProviderRegistry } from './providers/registry.js';
@@ -192,30 +193,39 @@ export function createApp(
   async function reviewStage(req: Request, s: Session, stage: ReviewedStage, validation: PlanValidation, deadline: number) {
     const answerKey = stageAnswerKey(s.plan, stage);
     const cached = s.stageReviews?.[stage];
-    if (cached && cached.answerKey === answerKey && (cached.passed || cached.source === 'ai')) return { review: cached, message: null };
-    const result = await providers.reviewStage(db(req), { stage, plan: s.plan, validation }, deadline);
-    const review: StageReview = { stage, answerKey, reviewedAt: now(), ...result };
-    s.stageReviews = { ...s.stageReviews, [stage]: review };
+    const reuse = !!(cached && cached.answerKey === answerKey && (cached.passed || cached.source === 'ai'));
+    let review: StageReview;
     let message: TutorReply | null = null;
+    if (reuse && cached) {
+      review = cached;
+    } else {
+      const result = await providers.reviewStage(db(req), { stage, plan: s.plan, validation }, deadline);
+      review = { stage, answerKey, reviewedAt: now(), ...result };
+      s.stageReviews = { ...s.stageReviews, [stage]: review };
+      if (!review.passed) {
+        const title = stage === 'summary' ? 'whole plan' : STAGE_TITLES[stage].toLowerCase();
+        message = {
+          id: newId('msg'),
+          role: 'tutor',
+          stage,
+          kind: 'socratic',
+          text: [
+            `Not yet. Your ${title} ${stage === 'variables' ? 'need' : 'needs'} a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
+            review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          questions: review.feedbackQuestions,
+          demo: false,
+          provider: review.source === 'ai' ? 'deepseek' : 'rules',
+          createdAt: now(),
+        };
+        s.chat.push(message);
+      }
+    }
+    // Count every failed check, including a repeat of the same answer. Never decrease it.
     if (!review.passed) {
-      const title = stage === 'summary' ? 'whole plan' : STAGE_TITLES[stage].toLowerCase();
-      message = {
-        id: newId('msg'),
-        role: 'tutor',
-        stage,
-        kind: 'socratic',
-        text: [
-          `Not yet. Your ${title} ${stage === 'variables' ? 'need' : 'needs'} a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
-          review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
-        ]
-          .filter(Boolean)
-          .join(' '),
-        questions: review.feedbackQuestions,
-        demo: false,
-        provider: review.source === 'ai' ? 'deepseek' : 'rules',
-        createdAt: now(),
-      };
-      s.chat.push(message);
+      s.failedChecks = { ...s.failedChecks, [stage]: (s.failedChecks?.[stage] ?? 0) + 1 };
     }
     return { review, message };
   }
@@ -442,6 +452,28 @@ export function createApp(
     const { review, message } = await reviewStage(req, s, stage, validation, Date.now() + AI_WORK_BUDGET_MS);
     touch(req, s);
     res.json({ review, messages: message ? [message] : [], ...sessionPayload(s) });
+  }));
+
+  /**
+   * Opens the example for one stage. Hidden until the 3rd failed check.
+   * The text is not sent until the student clicks, and it is never added to the tutor chat.
+   */
+  api.post('/sessions/:id/example', reviewLimit, wrap(async (req, res) => {
+    const s = ownedSession(req, res);
+    if (!s) return;
+    const stage = String(req.body?.stage ?? '');
+    if (!isReviewedStage(stage)) throw new BadInput('unknown stage');
+    const fails = s.failedChecks?.[stage] ?? 0;
+    if (fails < 3) {
+      return res.status(403).json({ error: 'not_yet', message: 'Try your own answer a few more times first.' });
+    }
+    if (!s.shownExamples?.[stage]) {
+      const active = providers.active(db(req));
+      const demo = active.demo || (await providers.budgetReached(db(req)));
+      s.shownExamples = { ...s.shownExamples, [stage]: { text: exampleAnswer(s.plan, stage), demo } };
+    }
+    touch(req, s);
+    res.json({ example: { stage, ...s.shownExamples[stage] }, ...sessionPayload(s) });
   }));
 
   /* ---------- Tutor chat ---------- */

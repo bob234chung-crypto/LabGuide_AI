@@ -8,7 +8,8 @@ import { SpendMeter, hkDay } from '../src/spend.js';
 import { Store } from '../src/store.js';
 import { AnswerLeakChecker, guardTutorDraft } from '../src/providers/guard.js';
 import { validateStageReview } from '../src/providers/schema.js';
-import { scrubPersonal } from '../src/providers/deepseek.js';
+import { REVIEW_SYSTEM_PROMPT, scrubPersonal } from '../src/providers/deepseek.js';
+import { exampleAnswer } from '../src/examples.js';
 
 process.env.NODE_ENV = 'test';
 
@@ -319,12 +320,14 @@ describe('daily spend cap', () => {
   });
 });
 
+const WEAK_HYPOTHESIS = 'If the light changes then the plant will do better.';
+
 describe('stage gating', () => {
   it('blocks Next with guiding questions when the AI review fails, and the tutor never gives the answer', async () => {
     const c = makeClient();
     await c.init();
     const id = await c.session();
-    await fill(c, id);
+    await fill(c, id, 'hypothesis', { hypothesis: WEAK_HYPOTHESIS });
     c.ds.reply({
       content: {
         passed: false,
@@ -342,32 +345,57 @@ describe('stage gating', () => {
     expect(r.body.review.feedbackQuestions).toEqual(['How does your prediction link what you change to what you measure?']);
     expect(r.body.messages[0]).toMatchObject({ role: 'tutor', provider: 'deepseek', stage: 'hypothesis' });
     expect(JSON.stringify(r.body.messages)).not.toMatch(/light intensity increases/);
+    expect(JSON.stringify(r.body.messages)).not.toMatch(/Example answer/);
     const review = c.ds.completions()[0].body;
     expect(review.messages[0].content).toMatch(/quality checker/);
+    expect(review.messages[0].content).toMatch(/S1 to S2/);
+    expect(review.messages[0].content).toMatch(/if the carbon dioxide is needed for the photosynthesis rate increase/);
+    expect(review.messages[0].content).toMatch(/Do not demand "faster", "slower"/);
     expect(review.max_tokens).toBeLessThanOrEqual(250);
     // The verdict is stored with the session; the same answer is not re-sent to DeepSeek.
     const again = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' });
     expect(again.status).toBe(409);
+    expect(again.body.session.failedChecks.hypothesis).toBe(2);
     expect(c.ds.completions()).toHaveLength(1);
     expect((await c.agent.get(`/api/sessions/${id}`)).body.session.currentStage).toBe('theme');
   });
 
-  it('lets the student move on once the AI review passes, and re-checks after an edit', async () => {
+  it('passes a simple hypothesis without letting the model block it, and still reviews a weaker edit', async () => {
     const c = makeClient();
     await c.init();
     const id = await c.session();
     await fill(c, id);
-    c.ds.reply(pass);
+    c.ds.reply({ content: { passed: false, feedbackQuestions: ['Say faster or slower.'] } });
     expect((await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' })).status).toBe(200);
-    expect((await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' })).status).toBe(200);
-    expect(c.ds.completions()).toHaveLength(1);
-    await c.put(`/api/sessions/${id}/stages/hypothesis`, { value: 'If the lamp is further from the pondweed, then fewer bubbles will be produced each minute.' });
-    c.ds.reply({ content: { passed: false, feedbackQuestions: ['Which way will the number of bubbles change?'] } });
+    expect(c.ds.completions()).toHaveLength(0);
+    await c.put(`/api/sessions/${id}/stages/hypothesis`, { value: WEAK_HYPOTHESIS });
+    c.ds.reply({ content: { passed: false, feedbackQuestions: ['What will you look at?'] } });
     expect((await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' })).status).toBe(409);
-    expect(c.ds.completions()).toHaveLength(2);
+    expect(c.ds.completions()).toHaveLength(1);
   });
 
-  it('runs the AI review for every stage before the diagram', async () => {
+  it('passes the carbon-dioxide sentence even if the model would reject it', async () => {
+    const c = makeClient();
+    await c.init();
+    const id = await c.session();
+    await fill(c, id, 'hypothesis', {
+      hypothesis: 'if the carbon dioxide is needed for the photosynthesis rate increase',
+    });
+    c.ds.reply({
+      content: {
+        passed: false,
+        feedbackQuestions: ['Name a clear independent variable, say faster or slower, and describe a lab test.'],
+      },
+    });
+    const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' });
+    expect(r.status).toBe(200);
+    expect(r.body.session.currentStage).toBe('variables');
+    expect(r.body.session.stageReviews.hypothesis).toMatchObject({ passed: true, source: 'heuristic' });
+    expect(c.ds.completions()).toHaveLength(0);
+    expect(JSON.stringify(r.body.session.chat)).not.toMatch(/Example answer|carbon dioxide, the photosynthesis/);
+  });
+
+  it('lets a good plan reach the diagram on the junior-form checks', async () => {
     const c = makeClient();
     await c.init();
     const id = await c.session();
@@ -375,8 +403,7 @@ describe('stage gating', () => {
     c.ds.reply(pass, pass, pass, pass, pass);
     const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'diagram' });
     expect(r.status).toBe(200);
-    const stages = c.ds.completions().map((x) => /Check the stage: (\w+)/.exec(x.body.messages[1].content)?.[1]);
-    expect(stages).toEqual(['hypothesis', 'variables', 'apparatus', 'procedure', 'summary']);
+    expect(c.ds.completions()).toHaveLength(0);
   });
 
   it('never lets the AI unlock what the rules block', async () => {
@@ -395,11 +422,11 @@ describe('stage gating', () => {
     expect(c.ds.completions()).toHaveLength(0);
   });
 
-  it('falls back to the stricter built-in checks when DeepSeek is down, and says so', async () => {
+  it('falls back to the junior-form checks when DeepSeek is down, and says so', async () => {
     const c = makeClient();
     await c.init();
     const id = await c.session();
-    await fill(c, id, 'hypothesis', { hypothesis: 'If the light changes then the plant will do better.' });
+    await fill(c, id, 'hypothesis', { hypothesis: WEAK_HYPOTHESIS });
     c.ds.reply({ status: 500 }, { status: 500 });
     const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' });
     expect(r.status).toBe(409);
@@ -412,18 +439,26 @@ describe('stage gating', () => {
     c.ds.reply({ status: 500 }, { status: 500 });
     const ok = await c.put(`/api/sessions/${good}/progress`, { currentStage: 'variables' });
     expect(ok.status).toBe(200);
-    expect(ok.body.session.stageReviews.hypothesis).toMatchObject({ passed: true, source: 'heuristic', fallbackReason: 'unavailable' });
+    expect(ok.body.session.stageReviews.hypothesis).toMatchObject({ passed: true, source: 'heuristic' });
+    expect(ok.body.session.stageReviews.hypothesis.fallbackReason).toBeUndefined();
+    expect(c.ds.completions()).toHaveLength(2);
   });
 
   it('uses the built-in checks when over budget', async () => {
     const c = makeClient({ capUsd: 0.000001 });
     await c.init();
     const id = await c.session();
-    await fill(c, id, 'hypothesis');
+    await fill(c, id, 'hypothesis', { hypothesis: WEAK_HYPOTHESIS });
     const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' });
-    expect(r.status).toBe(200);
-    expect(r.body.session.stageReviews.hypothesis).toMatchObject({ source: 'heuristic', fallbackReason: 'budget' });
+    expect(r.status).toBe(409);
+    expect(r.body.session.stageReviews.hypothesis).toMatchObject({ passed: false, source: 'heuristic', fallbackReason: 'budget' });
     expect(c.ds.completions()).toHaveLength(0);
+
+    const good = await c.session();
+    await fill(c, good, 'hypothesis');
+    const ok = await c.put(`/api/sessions/${good}/progress`, { currentStage: 'variables' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.session.stageReviews.hypothesis).toMatchObject({ passed: true, source: 'heuristic' });
   });
 
   it('does not let student text talk the reviewer into passing', async () => {
@@ -440,17 +475,86 @@ describe('stage gating', () => {
     expect(c.ds.completions()).toHaveLength(0);
   });
 
-  it('gates on the stricter heuristics in Demo mode (no key)', async () => {
+  it('gates on the junior-form checks in Demo mode (no key)', async () => {
     const c = makeClient({ key: null });
     await c.init();
     const id = await c.session();
-    await fill(c, id, 'hypothesis', { hypothesis: 'If the light changes then the plant will do better.' });
+    await fill(c, id, 'hypothesis', { hypothesis: WEAK_HYPOTHESIS });
     const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' });
     expect(r.status).toBe(409);
     expect(r.body.review).toMatchObject({ source: 'heuristic', fallbackReason: 'not_configured' });
     expect(r.body.review.feedbackQuestions.length).toBeGreaterThan(0);
     expect(r.body.review.feedbackQuestions.length).toBeLessThanOrEqual(3);
     expect(c.ds.calls).toHaveLength(0);
+
+    const co2 = await c.session();
+    await fill(c, co2, 'hypothesis', {
+      hypothesis: 'if the carbon dioxide is needed for the photosynthesis rate increase',
+    });
+    const ok = await c.put(`/api/sessions/${co2}/progress`, { currentStage: 'variables' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.session.stageReviews.hypothesis.passed).toBe(true);
+  });
+
+  it('shows an example only after 3 failed checks, and an edit does not hide it or reset the count', async () => {
+    const c = makeClient({ key: null });
+    await c.init();
+    const id = await c.session();
+    await fill(c, id, 'hypothesis', { hypothesis: WEAK_HYPOTHESIS });
+    const next = () => c.put(`/api/sessions/${id}/progress`, { currentStage: 'variables' });
+
+    const denied = await c.post(`/api/sessions/${id}/example`, { stage: 'hypothesis' });
+    expect(denied.status).toBe(403);
+    expect(JSON.stringify(denied.body)).not.toMatch(/pondweed makes more bubbles/);
+
+    expect((await next()).body.session.failedChecks.hypothesis).toBe(1);
+    expect((await next()).body.session.failedChecks.hypothesis).toBe(2);
+    const third = await next();
+    expect(third.status).toBe(409);
+    expect(third.body.session.failedChecks.hypothesis).toBe(3);
+    expect(third.body.session.shownExamples).toBeUndefined();
+    expect(JSON.stringify(third.body.session.chat)).not.toMatch(/pondweed makes more bubbles/);
+    expect(JSON.stringify(third.body.messages ?? [])).not.toMatch(/pondweed makes more bubbles/);
+
+    const reveal = await c.post(`/api/sessions/${id}/example`, { stage: 'hypothesis' });
+    expect(reveal.status).toBe(200);
+    expect(reveal.body.example).toMatchObject({ stage: 'hypothesis', demo: true });
+    expect(reveal.body.example.text).toMatch(/pondweed|bubbles|lamp/);
+    expect(reveal.body.session.shownExamples.hypothesis.text).toBe(reveal.body.example.text);
+    expect(JSON.stringify(reveal.body.session.chat)).not.toContain(reveal.body.example.text);
+
+    const refreshed = await c.agent.get(`/api/sessions/${id}`);
+    expect(refreshed.body.session.failedChecks.hypothesis).toBe(3);
+    expect(refreshed.body.session.shownExamples.hypothesis).toEqual(reveal.body.example && {
+      text: reveal.body.example.text,
+      demo: true,
+    });
+
+    await c.put(`/api/sessions/${id}/stages/hypothesis`, { value: `${WEAK_HYPOTHESIS} Maybe.` });
+    const edited = await c.agent.get(`/api/sessions/${id}`);
+    expect(edited.body.session.failedChecks.hypothesis).toBeGreaterThanOrEqual(3);
+    expect(edited.body.session.shownExamples.hypothesis.text).toBe(reveal.body.example.text);
+
+    const fourth = await next();
+    expect(fourth.body.session.failedChecks.hypothesis).toBeGreaterThanOrEqual(3);
+    expect(fourth.body.session.shownExamples.hypothesis.text).toBe(reveal.body.example.text);
+    const again = await c.post(`/api/sessions/${id}/example`, { stage: 'hypothesis' });
+    expect(again.body.example.text).toBe(reveal.body.example.text);
+  });
+});
+
+describe('example answers', () => {
+  it('uses the student topic, including a carbon-dioxide photosynthesis idea', () => {
+    const plan = emptyPlan();
+    plan.theme.theme = 'photosynthesis';
+    plan.hypothesis = 'if the carbon dioxide is needed for the photosynthesis rate increase';
+    expect(exampleAnswer(plan, 'hypothesis')).toMatch(/carbon dioxide/i);
+    expect(exampleAnswer(plan, 'hypothesis').length).toBeLessThan(120);
+    plan.hypothesis = 'If the lamp is closer, the pondweed makes more bubbles.';
+    expect(exampleAnswer(plan, 'hypothesis')).toMatch(/lamp|pondweed|bubbles/i);
+    expect(exampleAnswer(plan, 'variables')).toMatch(/change/i);
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/S1 to S2/);
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/if the carbon dioxide is needed for the photosynthesis rate increase/);
   });
 });
 

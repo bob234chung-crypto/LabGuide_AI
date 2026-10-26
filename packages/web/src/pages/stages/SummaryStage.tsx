@@ -11,6 +11,7 @@ import {
   type PlanStage,
 } from '@labguide/shared';
 import { useAdvance, useSession } from '../../session';
+import { ExampleHelp } from '../../components/ExampleHelp';
 import { ErrorState, Icon, ReviewFeedback, SafetyBlocks } from '../../components/ui';
 
 function Section({ stage, children }: { stage: PlanStage; children: ReactNode }) {
@@ -100,6 +101,7 @@ export function SummaryStage() {
       <PlanSummaryContent />
       <div className="card stack">
         {review && !review.passed && validation.canGenerateDiagram && <ReviewFeedback review={review} />}
+        <ExampleHelp stage="summary" />
         <button className="btn btn-primary" onClick={() => void generate()} disabled={!validation.canGenerateDiagram}
           aria-busy={busy} aria-describedby="gen-why">
           <Icon name="pencil" /> {busy ? 'Checking your whole plan…' : 'Generate Sectional Diagram'}

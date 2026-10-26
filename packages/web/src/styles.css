@@ -104,6 +104,10 @@ input[type='checkbox'] { width: 24px; height: 24px; accent-color: var(--teal); f
 }
 .badge-rules { border-color: var(--navy-2); background: #fff; }
 .review-feedback ul li + li { margin-top: 0.2rem; }
+.example-answer {
+  border: 2px solid var(--teal); background: var(--teal-soft); border-radius: 10px; padding: 0.75rem 0.9rem;
+}
+.example-label { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-weight: 800; }
 .save-indicator { font-size: 0.88rem; color: var(--muted); display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
 .save-indicator[data-state='error'] { color: var(--navy); font-weight: 700; }
 

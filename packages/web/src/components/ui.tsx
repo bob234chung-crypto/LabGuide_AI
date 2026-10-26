@@ -76,6 +76,20 @@ const REVIEW_NOTES: Record<NonNullable<StageReview['fallbackReason']>, string> =
   suspicious_input: 'LabGuide found words that are not part of a science answer.',
 };
 
+/** A sample the student asked to see. Labelled so it is clearly not their own work. */
+export function ExampleAnswerBox({ text, demo }: { text: string; demo: boolean }) {
+  return (
+    <div className="example-answer" role="note" aria-label="Example answer">
+      <div className="example-label">
+        Example answer
+        {demo && <DemoBadge />}
+      </div>
+      <p style={{ margin: '0.4rem 0 0', whiteSpace: 'pre-wrap' }}>{text}</p>
+      <p className="hint-text" style={{ margin: '0.35rem 0 0' }}>This is an example. It is not your own work. Write your answer in your own words.</p>
+    </div>
+  );
+}
+
 /** Amber "Not yet" box with the reviewer's guiding questions. Never shows an answer. */
 export function ReviewFeedback({ review }: { review: StageReview }) {
   return (

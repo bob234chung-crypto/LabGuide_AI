@@ -11,7 +11,7 @@ export function HypothesisStage() {
     <section className="stack" aria-labelledby="stage-h">
       <h1 id="stage-h">2. Write your hypothesis</h1>
       <p>
-        Write your idea as a sentence you can test. For example: If the lamp is closer, then the pondweed makes more bubbles. Or: As the water gets hotter, the sugar dissolves faster.
+        Write your idea as a sentence you can test. Say what you change and what you look at. Imperfect English is fine. For example: If the lamp is closer, the pondweed makes more bubbles.
       </p>
       <div className={`answer-card ${v.issues.some((i) => i.severity === 'safety_block') ? 'has-safety' : ''}`}>
         <div className="card-title">

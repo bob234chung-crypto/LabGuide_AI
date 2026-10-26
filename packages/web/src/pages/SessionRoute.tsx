@@ -16,6 +16,7 @@ import {
   type Session,
 } from '@labguide/shared';
 import { api } from '../api';
+import { ExampleHelp } from '../components/ExampleHelp';
 import { ErrorState, Icon, ReviewFeedback } from '../components/ui';
 import { TutorPanel } from '../components/TutorPanel';
 import { SessionProvider, errorMessage, useAdvance, useSession } from '../session';
@@ -292,6 +293,7 @@ export function StageFooter({ stage }: { stage: PlanStage }) {
   return (
     <div className="stack">
       {review && !review.passed && sv.complete && <ReviewFeedback review={review} />}
+      {reviewedStage && <ExampleHelp stage={reviewedStage} />}
       <div className="stage-footer">
         {prev ? (
           <Link className="btn" to={`/s/${session.id}/${prev}`}>

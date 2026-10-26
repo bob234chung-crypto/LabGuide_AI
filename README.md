@@ -1,6 +1,6 @@
 # LabGuide AI (prototype)
 
-A Socratic science-investigation tutor for Hong Kong S1–S3 students (English only). Students
+A Socratic science-investigation tutor for Hong Kong S1–S2 students (English only). Students
 plan a fair test across seven stages (Theme, Hypothesis, Variables, Apparatus, Procedure,
 Safety, Summary), then build a 2D sectional diagram on a drag-and-drop canvas and export it
 as PNG or PDF.
@@ -163,12 +163,18 @@ Diagram) is enforced on the server:
 1. The deterministic rules and safety blocks run first and always win.
 2. Each reviewed stage (hypothesis, variables, apparatus, procedure, then the whole plan before
    the diagram) needs a passed quality review for the current answers. The review returns
-   `{ passed, feedbackQuestions[] }`. The AI can only add a block.
-3. When the AI is not configured, over budget, failing or unusable, the stricter built-in
-   checks (`packages/shared/src/rules/quality.ts`) decide, and the result says so.
+   `{ passed, feedbackQuestions[] }`. The S1–S2 checks pass a simple on-topic idea (what they
+   change and what they look at). Weak grammar is fine, and words like "faster" or "slower"
+   are not required. The model cannot overturn that pass. Safety blocks still always win.
+3. When the idea is not good enough and the AI is not configured, over budget, failing or
+   unusable, the same junior-form checks (`packages/shared/src/rules/quality.ts`) decide, and
+   the result says so. Empty answers, "I don't know", off-topic text and unsafe plans still fail.
 4. A failed review answers `409 review_failed` with guiding questions (never the answer) and
-   adds them to the tutor chat. The verdict is stored with a fingerprint of the answers, so
-   editing an answer re-opens the check for that stage and the stages after it.
+   adds them to the tutor chat. The server counts failed checks per stage. After the third
+   failure the student can press "Show an example answer". The example is not in the tutor
+   reply. The verdict is stored with a fingerprint of the answers, so editing an answer
+   re-opens the check, but it does not lower the fail count below 3 or hide an example
+   they already opened.
 
 ## Where the real Poe and Gemini adapters plug in
 

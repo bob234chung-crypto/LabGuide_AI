@@ -56,25 +56,9 @@ function hypothesisStage(plan: Plan): StageValidation {
     });
   } else {
     praise.push('Good. You wrote your idea as a sentence.');
-    if (wordCount(text) < 7) {
-      issues.push({
-        ruleId: 'hypothesis_short',
-        stage: 'hypothesis',
-        severity: 'hint',
-        required: true,
-        message: 'Your hypothesis is very short. What will you change, and what do you expect to happen?',
-      });
-    }
-    if (!CHANGE_WORDS.test(text)) {
-      issues.push({
-        ruleId: 'hypothesis_direction',
-        stage: 'hypothesis',
-        severity: 'hint',
-        required: true,
-        message: 'Which way do you predict the change will go? Will it go up or down?',
-      });
-    } else {
-      praise.push('Good. You predicted a direction of change, so your test can check it.');
+    // Direction words (faster, slower, more) are not required at S1–S2. Praise them when present.
+    if (CHANGE_WORDS.test(text)) {
+      praise.push('Good. You said which way you think the result will go.');
     }
     if (/\b(better|best|good|nice|work)\b/i.test(text)) {
       issues.push({
@@ -200,14 +184,14 @@ function apparatusStage(plan: Plan): StageValidation {
   for (const id of measuring) {
     const j = (a.justifications[id] ?? '').trim();
     const name = apparatusName(id);
-    if (wordCount(j) < 4) {
+    if (!j) {
       issues.push({
         ruleId: 'justification_missing',
         stage: 'apparatus',
         severity: 'hint',
         required: true,
         field: id,
-        message: `Why did you choose the ${name.toLowerCase()}? Write a short reason.`,
+        message: `Why did you choose the ${name.toLowerCase()}? A few words are enough.`,
       });
     } else if (/\b(precise|precisely|accurate|accurately|exact|smaller scale|scale|reading)\b/i.test(j)) {
       praise.push(`Good. You chose the ${name.toLowerCase()} because it measures more precisely.`);
@@ -219,7 +203,7 @@ function apparatusStage(plan: Plan): StageValidation {
         stage: 'apparatus',
         severity: 'hint',
         field: id,
-        message: `How does the ${name.toLowerCase()} help you get precise results?`,
+        message: `What will you use the ${name.toLowerCase()} for?`,
       });
     }
   }
@@ -239,7 +223,7 @@ function procedureStage(plan: Plan): StageValidation {
       message: 'Write at least 3 steps. What do you do first, next and last?',
     });
   }
-  const tooShort = steps.find((s) => wordCount(s.text) < 3);
+  const tooShort = steps.find((s) => wordCount(s.text) < 2);
   if (tooShort) {
     issues.push({
       ruleId: 'procedure_step_short',
@@ -247,7 +231,7 @@ function procedureStage(plan: Plan): StageValidation {
       severity: 'hint',
       required: true,
       field: tooShort.id,
-      message: 'One step is very short. Could someone else follow it?',
+      message: 'One step is only one word. What do you do in that step?',
     });
   }
   const all = steps.map((s) => s.text).join(' ');

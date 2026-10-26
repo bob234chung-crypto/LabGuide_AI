@@ -1,6 +1,6 @@
 import { apparatusName, getApparatus } from '../apparatus.js';
 import type { Plan, ReviewedStage, ThemeId } from '../types.js';
-import { normalise, wordCount } from './text.js';
+import { normalise } from './text.js';
 
 /** Words that place a sentence on a theme's topic. Also used to spot answers written by a model. */
 export const THEME_KEYWORDS: Record<Exclude<ThemeId, 'custom'>, string[]> = {
@@ -37,16 +37,18 @@ export function contentWords(text: string): string[] {
     .filter((w) => w.length >= 4 && !STOPWORDS.has(w));
 }
 
-const VAGUE = /\b(better|best|good|nice|work|works|stuff|thing|things|something|affect it|affects it)\b/i;
-const QUANTITY =
-  /\b(time|times|seconds?|minutes?|volume|cm3|cm³|ml|temperature|°c|degrees|mass|grams?|kg|number|count|rate|height|length|distance|bubbles?|oxygen|gas|colour|color|ph|amount|concentration|speed|faster|slower|quicker|longer|shorter|higher|lower|more|less|fewer|greater|smaller|bigger|increase|increases|decrease|decreases|dissolves?|cools?|warmer|colder)\b/i;
-const MEASURABLE_DV =
-  /\b(time|seconds?|minutes?|volume|cm3|cm³|ml|temperature|°c|degrees|mass|grams?|number|count|rate|height|length|distance|bubbles?|colour|color|ph|how long|how fast|speed)\b/i;
-const REASON = /\b(because|so|so that|to|as|since|which|for|in order)\b/i;
-const MEASURE_WORD = /\b(measure|measures|measuring|record|recorded|read|reading|readings|time|count|counts|note|write down|weigh)\b/i;
-const REPEAT = /\b(repeat|repeats|repeated|again|three times|3 times|twice|average|mean)\b/i;
-const CHANGE_STEP = /\b(change|changes|vary|different|increase|decrease|each|then use|next use|move|set)\b/i;
+/** Vague praise words. "Work" is allowed: junior students say "the enzyme will work". */
+const VAGUE = /\b(better|best|good|nice|stuff|thing|things|something|affect it|affects it)\b/i;
+/**
+ * Something the student can look at. Direction words (faster, slower, more) are not required.
+ * "Photosynthesis" and "enzyme" count, so "carbon dioxide … photosynthesis rate" is enough.
+ */
+const LOOK_AT =
+  /\b(rate|rates|bubble|bubbles|oxygen|time|times|minute|minutes|second|seconds|colour|color|number|amount|temperature|mass|volume|height|length|distance|speed|ph|count|counts|gas|foam|dissolve|dissolves|dissolving|cool|cools|cooling|photosynthesis|enzyme|enzymes|insulation|sugar|salt|rust|rusts|rusting|grow|grows|growing|hotter|colder|warmer)\b/i;
+const NON_ANSWER =
+  /^(i\s*do\s*n['’]?t\s*know|i\s*dont\s*know|idk|no\s*idea|dunno|not\s*sure|i'?m\s*not\s*sure|i\s*am\s*not\s*sure|unsure|no|yes|ok|okay|n\/?a|none|nil|nothing|don'?t\s*know|\?+)$/i;
 const EMPTY_CONTROL = /^(everything|all|same|the same|nothing|none|everything else|all the same|other things|n\/?a)$/i;
+const FILLER = new Set(['useful', 'helpful', 'good', 'nice', 'important', 'needed', 'okay', 'thing', 'stuff', 'because']);
 
 export interface QualityResult {
   passed: boolean;
@@ -65,35 +67,76 @@ function mentionsAny(text: string, words: string[]): boolean {
   return words.some((w) => t.includes(w.length <= 3 ? ` ${w} ` : w));
 }
 
+/** "I don't know" with no real idea attached. A hedged sentence that still names the test can pass. */
+export function isNonAnswer(text: string): boolean {
+  const t = normalise(text).replace(/[.!?]+$/g, '').trim();
+  if (!t) return true;
+  if (NON_ANSWER.test(t)) return true;
+  const rest = t
+    .replace(/^(i\s*)?(do\s*n['’]?t|dont)\s*know\b[,.\s]*/i, '')
+    .replace(/^(idk|no idea|dunno)\b[,.\s]*/i, '')
+    .trim();
+  return rest !== t && contentWords(rest).length < 2;
+}
+
+function onTopic(plan: Plan, text: string): boolean {
+  const topic = topicWords(plan);
+  if (!topic.length) return contentWords(text).length >= 2;
+  return mentionsAny(text, topic);
+}
+
+/** A short lab word is enough. Precise terms and units are not required. */
+function aboutExperiment(plan: Plan, text: string): boolean {
+  if (isNonAnswer(text)) return false;
+  if (onTopic(plan, text) || LOOK_AT.test(text)) return true;
+  return contentWords(text).length >= 1 && topicWords(plan).length === 0;
+}
+
+/**
+ * A simple idea: what they change and what they look at.
+ * Weak grammar is fine. Words like faster or slower are not required.
+ */
+function namesChangeAndLook(plan: Plan, text: string): boolean {
+  if (contentWords(text).length < 2) return false;
+  if (LOOK_AT.test(text)) return true;
+  return plan.theme.theme === 'custom';
+}
+
 function hypothesisQuestions(plan: Plan): string[] {
   const text = plan.hypothesis.trim();
-  const q: string[] = [];
-  if (wordCount(text) < 10) q.push('Can you add more detail? What exactly will you change, and what exactly will you measure?');
-  if (VAGUE.test(text)) q.push('Which word in your hypothesis is hard to measure? What could you measure instead?');
-  if (!QUANTITY.test(text)) q.push('In your prediction, what result will you measure, and will it go up or down?');
-  const topic = topicWords(plan);
-  if (topic.length && !mentionsAny(text, topic)) q.push('How does your hypothesis connect to the topic you chose?');
-  return q;
+  if (!text || isNonAnswer(text)) return ['What will you change, and what will you look at?'];
+  if (!onTopic(plan, text)) return ['How does your idea fit this experiment?'];
+  if (VAGUE.test(text) && !LOOK_AT.test(text)) return ['What will you look at in your test?'];
+  if (!namesChangeAndLook(plan, text)) return ['What will you change, and what will you look at?'];
+  return [];
 }
 
 function variablesQuestions(plan: Plan): string[] {
   const v = plan.variables;
   const q: string[] = [];
-  const hyp = normalise(plan.hypothesis);
-  const ivWords = contentWords(v.independent);
-  const dvWords = contentWords(v.dependent);
-  if (!MEASURABLE_DV.test(v.dependent)) q.push('How will you measure your dependent variable? What unit will you use?');
-  if (ivWords.length && !ivWords.some((w) => hyp.includes(w))) q.push('Does your hypothesis talk about the same variable you change here?');
-  if (dvWords.length && !dvWords.some((w) => hyp.includes(w))) q.push('Does your hypothesis talk about the same thing you measure here?');
-  const controls = v.controlled.map((c) => c.text.trim()).filter(Boolean);
-  if (controls.some((c) => EMPTY_CONTROL.test(c) || contentWords(c).length === 0)) {
-    q.push('Which exact things will you keep the same? Can you name each one?');
+  const iv = v.independent.trim();
+  const dv = v.dependent.trim();
+  if (isNonAnswer(iv) || isNonAnswer(dv)) {
+    q.push('What will you change, and what will you look at?');
+  } else if (!aboutExperiment(plan, iv) || !aboutExperiment(plan, dv)) {
+    q.push('How do these fit your experiment?');
   }
-  // Same quantity as the independent variable (same head word, e.g. "temperature of …"), not just the same object.
+  const controls = v.controlled.map((c) => c.text.trim()).filter(Boolean);
+  if (controls.some((c) => isNonAnswer(c) || EMPTY_CONTROL.test(c) || contentWords(c).length === 0)) {
+    q.push('Which things will you keep the same? Can you name one?');
+  }
+  const ivWords = contentWords(iv);
   if (ivWords.length && controls.some((c) => contentWords(c.replace(/^\s*(the\s+)?same\s+/i, ''))[0] === ivWords[0])) {
     q.push('Can you keep something the same if you also change it on purpose?');
   }
   return q;
+}
+
+function justificationOk(text: string): boolean {
+  if (!text.trim() || isNonAnswer(text)) return false;
+  const words = contentWords(text).filter((w) => !FILLER.has(w));
+  if (words.length > 0) return true;
+  return /\b(time|count|hold|heat|see|read|measure|measures|measuring|light|water|gas)\b/i.test(text);
 }
 
 function apparatusQuestions(plan: Plan): string[] {
@@ -101,30 +144,24 @@ function apparatusQuestions(plan: Plan): string[] {
   const measuring = plan.apparatus.selected.filter((id) => getApparatus(id)?.measuring);
   for (const id of measuring) {
     const j = (plan.apparatus.justifications[id] ?? '').trim();
-    if (wordCount(j) < 5 || !REASON.test(j)) {
-      q.push(`Why is the ${apparatusName(id).toLowerCase()} a good choice? What does it measure, and how precisely?`);
-    }
+    if (!justificationOk(j)) q.push(`What will you use the ${apparatusName(id).toLowerCase()} for?`);
   }
   return q;
 }
 
 function procedureQuestions(plan: Plan): string[] {
-  const q: string[] = [];
   const steps = plan.procedure.map((s) => s.text.trim()).filter(Boolean);
+  if (steps.length === 0 || steps.every(isNonAnswer)) return ['What will you do first in your test?'];
   const all = steps.join(' ');
-  if (steps.some((s) => wordCount(s) < 4)) q.push('Could a classmate follow every step? Which step needs more detail?');
-  if (!REPEAT.test(all)) q.push('How many times will you repeat each test? Why does that help?');
-  if (!MEASURE_WORD.test(all)) q.push('In which step do you measure and record your results?');
-  const ivWords = contentWords(plan.variables.independent);
-  if (!(ivWords.some((w) => normalise(all).includes(w)) && CHANGE_STEP.test(all))) {
-    q.push('In which step do you change your independent variable? How?');
-  }
-  return q;
+  if (!onTopic(plan, all) && !LOOK_AT.test(all)) return ['How do these steps fit your experiment?'];
+  return [];
 }
 
 /**
- * Stricter deterministic quality checks, used when the AI review is not available.
+ * Junior-form (S1–S2) quality checks. A short, on-topic idea is enough.
+ * Used on its own in Demo mode, and as a pass that the AI reviewer is not allowed to overturn.
  * The questions guide the student; they never contain the answer.
+ * Safety blocks are separate and are never relaxed here.
  */
 export function heuristicStageReview(plan: Plan, stage: ReviewedStage): QualityResult {
   const byStage: Record<ReviewedStage, () => string[]> = {

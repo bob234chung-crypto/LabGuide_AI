@@ -40,11 +40,11 @@ export const INJECTION_QUESTION =
   'Your answer has words that are not about science. Can you remove them and write only your own idea?';
 
 const GENERIC_QUESTION: Record<ReviewedStage, string> = {
-  hypothesis: 'Read your hypothesis again. Does it say what you change, what you measure, and which way the result will go?',
-  variables: 'Look at each variable again. How will you change it, measure it, or keep it the same?',
-  apparatus: 'Read your reasons again. Does each one say what the item measures and why it is a good choice?',
-  procedure: 'Could a classmate follow your steps with no help? Which step could be clearer?',
-  summary: 'Does your method really test your hypothesis, using the same variables everywhere?',
+  hypothesis: 'Does your sentence say what you change and what you look at?',
+  variables: 'Can you name what you change, what you look at, and one thing you keep the same?',
+  apparatus: 'Can you say, in a few words, what each item is for?',
+  procedure: 'Can you write a few short steps for your test?',
+  summary: 'Does your plan match your idea?',
 };
 
 function stageTexts(ctx: StageReviewContext): string[] {
@@ -173,16 +173,20 @@ export class ProviderRegistry {
   }
 
   /**
-   * Quality review of one stage, run only after the deterministic rules pass. The AI can only
-   * add a block. When it is not available (not configured, over budget, failing, or its reply
-   * is unusable), the stricter built-in heuristics decide instead and the result says so.
+   * Quality review of one stage, run only after the deterministic rules and safety blocks pass.
+   * The S1–S2 checks are a pass the model cannot overturn: a simple on-topic idea moves on.
+   * The model is asked only when those checks fail, and it uses the same easier bar.
+   * When the model is not available, the same checks decide and the result says so.
+   * Safety blocks are applied earlier and are never relaxed here.
    */
   async reviewStage(store: Store, ctx: StageReviewContext, deadline: number): Promise<ReviewResult> {
     if (looksLikeInjection(ctx)) {
       return { passed: false, feedbackQuestions: [INJECTION_QUESTION], source: 'heuristic', fallbackReason: 'suspicious_input' };
     }
+    const easy = heuristicStageReview(ctx.plan, ctx.stage);
+    if (easy.passed) return { passed: true, feedbackQuestions: [], source: 'heuristic' };
     const heuristic = (reason: ReviewFallbackReason): ReviewResult => ({
-      ...heuristicStageReview(ctx.plan, ctx.stage),
+      ...easy,
       source: 'heuristic',
       fallbackReason: reason,
     });

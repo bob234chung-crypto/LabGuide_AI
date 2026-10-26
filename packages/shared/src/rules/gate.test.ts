@@ -87,7 +87,7 @@ describe('stage gate', () => {
   });
 });
 
-describe('stricter built-in quality checks', () => {
+describe('junior-form quality checks', () => {
   it('pass a good plan', () => {
     const p = goodPlan();
     for (const s of ['hypothesis', 'variables', 'apparatus', 'procedure', 'summary'] as const) {
@@ -95,28 +95,72 @@ describe('stricter built-in quality checks', () => {
     }
   });
 
-  it('accepts a plain testable sentence and does not demand a set form', () => {
+  it('passes the carbon-dioxide sentence, with weak grammar and no faster or slower', () => {
+    const p = goodPlan();
+    p.hypothesis = 'if the carbon dioxide is needed for the photosynthesis rate increase';
+    expect(heuristicStageReview(p, 'hypothesis')).toEqual({ passed: true, feedbackQuestions: [] });
+
+    p.hypothesis = 'if the carbon dioxide is needed for the photosynthesis rate';
+    expect(heuristicStageReview(p, 'hypothesis')).toEqual({ passed: true, feedbackQuestions: [] });
+  });
+
+  it('accepts a plain testable sentence and a short on-topic answer', () => {
     const p = goodPlan();
     p.hypothesis = 'The pondweed makes more bubbles when the lamp is closer.';
     expect(heuristicStageReview(p, 'hypothesis')).toEqual({ passed: true, feedbackQuestions: [] });
 
+    p.hypothesis = 'more light more bubbles';
+    expect(heuristicStageReview(p, 'hypothesis').passed).toBe(true);
+
+    const v = goodPlan();
+    v.variables.independent = 'light';
+    v.variables.dependent = 'bubbles';
+    v.variables.controlled = [
+      { id: 'a', text: 'water' },
+      { id: 'b', text: 'pondweed' },
+    ];
+    expect(heuristicStageReview(v, 'variables').passed).toBe(true);
+    v.variables.dependent = 'How healthy the plant looks';
+    expect(heuristicStageReview(v, 'variables').passed).toBe(true);
+
+    const a = goodPlan();
+    a.apparatus.justifications.stopwatch = 'to time';
+    expect(heuristicStageReview(a, 'apparatus').passed).toBe(true);
+
+    const pr = goodPlan();
+    pr.procedure = [
+      { id: 's1', text: 'Put pondweed in water.' },
+      { id: 's2', text: 'Move the lamp.' },
+      { id: 's3', text: 'Count bubbles.' },
+    ];
+    expect(heuristicStageReview(pr, 'procedure')).toEqual({ passed: true, feedbackQuestions: [] });
+  });
+
+  it('still blocks empty answers, I don\'t know, off-topic text and vague ideas', () => {
+    const p = goodPlan();
     p.hypothesis = 'Plants like light.';
     const weak = heuristicStageReview(p, 'hypothesis');
     expect(weak.passed).toBe(false);
-    expect(weak.feedbackQuestions.join(' ')).not.toMatch(/If … then|As \[X\]/);
+    expect(weak.feedbackQuestions.join(' ')).not.toMatch(/If … then|As \[X\]|faster or slower/);
     expect(weak.feedbackQuestions.every((q) => q.endsWith('?'))).toBe(true);
-  });
 
-  it('block weak answers the basic rules allow, with at most 3 questions', () => {
-    const p = goodPlan();
     p.hypothesis = 'If the light changes then the plant will do better.';
     const h = heuristicStageReview(p, 'hypothesis');
     expect(h.passed).toBe(false);
     expect(h.feedbackQuestions.length).toBeLessThanOrEqual(3);
-    expect(h.feedbackQuestions.every((q) => q.endsWith('?'))).toBe(true);
+
+    p.hypothesis = "I don't know";
+    expect(heuristicStageReview(p, 'hypothesis').passed).toBe(false);
+    p.hypothesis = '';
+    expect(heuristicStageReview(p, 'hypothesis').passed).toBe(false);
+    p.hypothesis = 'I want pizza for lunch today please';
+    expect(heuristicStageReview(p, 'hypothesis').passed).toBe(false);
 
     const v = goodPlan();
-    v.variables.dependent = 'How healthy the plant looks';
+    v.variables.dependent = 'my favourite football team';
+    expect(heuristicStageReview(v, 'variables').passed).toBe(false);
+    v.variables.dependent = 'Number of bubbles per minute';
+    v.variables.independent = 'idk';
     expect(heuristicStageReview(v, 'variables').passed).toBe(false);
 
     const same = goodPlan();
@@ -130,7 +174,11 @@ describe('stricter built-in quality checks', () => {
     expect(heuristicStageReview(a, 'apparatus').passed).toBe(false);
 
     const pr = goodPlan();
-    pr.procedure = pr.procedure.filter((s) => !/Repeat/.test(s.text));
-    expect(heuristicStageReview(pr, 'procedure').feedbackQuestions).toContain('How many times will you repeat each test? Why does that help?');
+    pr.procedure = [
+      { id: 's1', text: 'Go to the mall.' },
+      { id: 's2', text: 'Buy some shoes.' },
+      { id: 's3', text: 'Walk home after.' },
+    ];
+    expect(heuristicStageReview(pr, 'procedure').passed).toBe(false);
   });
 });

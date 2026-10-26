@@ -260,6 +260,13 @@ export interface Session {
   hintLevels: Partial<Record<AppStage, number>>;
   /** Quality reviews that gate moving on. Missing on sessions created before gating existed. */
   stageReviews?: Partial<Record<ReviewedStage, StageReview>>;
+  /**
+   * Failed quality checks per stage. Stored on the server so a refresh does not reset it.
+   * Editing an answer never decreases this count.
+   */
+  failedChecks?: Partial<Record<ReviewedStage, number>>;
+  /** Example answers the student has chosen to open. Hidden until they click. */
+  shownExamples?: Partial<Record<ReviewedStage, ShownExample>>;
   createdAt: string;
   updatedAt: string;
 }
@@ -280,6 +287,13 @@ export interface StageReview {
   /** Fingerprint of the answers that were reviewed. A review only counts while the answers are unchanged. */
   answerKey: string;
   reviewedAt: string;
+}
+
+/** A sample answer for this student's topic. Shown only after they click the button. */
+export interface ShownExample {
+  text: string;
+  /** True when Demo mode supplied this from a template (show the Demo badge). */
+  demo: boolean;
 }
 
 export interface SessionSummary {

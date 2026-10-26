@@ -10,8 +10,10 @@ import type {
   PlanValidation,
   ProviderStatus,
   Scene,
+  ReviewedStage,
   Session,
   SessionSummary,
+  ShownExample,
 } from '@labguide/shared';
 
 /**
@@ -79,6 +81,12 @@ export const api = {
   setProgress: (id: string, currentStage: AppStage, diagramMethod?: 'canvas') =>
     request<SessionPayload>('PUT', `/api/sessions/${encodeURIComponent(id)}/progress`, { currentStage, diagramMethod }),
   review: (id: string) => request<{ validation: PlanValidation }>('POST', `/api/sessions/${encodeURIComponent(id)}/review`, {}),
+  showExample: (id: string, stage: ReviewedStage) =>
+    request<SessionPayload & { example: ShownExample & { stage: ReviewedStage } }>(
+      'POST',
+      `/api/sessions/${encodeURIComponent(id)}/example`,
+      { stage },
+    ),
   chat: (id: string, req: ChatRequest & { retry?: boolean }) =>
     request<{ messages: ChatMessage[] }>('POST', `/api/sessions/${encodeURIComponent(id)}/chat`, req),
 

@@ -56,7 +56,7 @@ export function Welcome() {
     <main id="main" className="page">
       <section className="hero">
         <div>
-          <p className="muted" style={{ fontWeight: 700, marginBottom: 4 }}>For S1–S3 science students</p>
+          <p className="muted" style={{ fontWeight: 700, marginBottom: 4 }}>For S1–S2 science students</p>
           <h1>Plan a fair science investigation, step by step.</h1>
           <p>
             LabGuide asks you questions to help you think. You write every answer yourself. Then you build a

@@ -60,23 +60,29 @@ describe('hypothesis sentence', () => {
     expect(stage.issues.map((i) => i.message).join(' ')).not.toMatch(/If … then|As \[X\]/);
   });
 
-  it('keeps Next blocked until the sentence is a testable prediction', () => {
+  it('lets a simple sentence through, including weak grammar and no faster or slower', () => {
     const p = goodPlan();
+    p.hypothesis = 'if the carbon dioxide is needed for the photosynthesis rate increase';
+    expect(validatePlan(p).stages.hypothesis.complete).toBe(true);
+    expect(validatePlan(p).stages.hypothesis.issues.some((i) => i.required)).toBe(false);
+
+    p.hypothesis = 'if the carbon dioxide is needed for the photosynthesis rate';
+    expect(validatePlan(p).stages.hypothesis.complete).toBe(true);
+
     p.hypothesis = 'Plants like light.';
-    const short = validatePlan(p).stages.hypothesis;
-    expect(short.complete).toBe(false);
-    expect(short.issues.some((i) => i.ruleId === 'hypothesis_short')).toBe(true);
-    expect(short.issues.map((i) => i.message).join(' ')).not.toMatch(/If … then|As \[X\]/);
+    expect(validatePlan(p).stages.hypothesis.complete).toBe(true);
+    expect(validatePlan(p).stages.hypothesis.issues.map((i) => i.message).join(' ')).not.toMatch(/If … then|As \[X\]/);
+  });
 
-    p.hypothesis = 'The pondweed sits in water near a bright lamp all day.';
-    const flat = validatePlan(p).stages.hypothesis;
-    expect(flat.complete).toBe(false);
-    expect(flat.issues.some((i) => i.ruleId === 'hypothesis_direction')).toBe(true);
-
+  it('keeps a blank or one word incomplete', () => {
+    const p = goodPlan();
     p.hypothesis = 'Bubbles';
     const oneWord = validatePlan(p).stages.hypothesis;
     expect(oneWord.complete).toBe(false);
     expect(oneWord.issues.some((i) => i.ruleId === 'hypothesis_empty')).toBe(true);
+
+    p.hypothesis = '';
+    expect(validatePlan(p).stages.hypothesis.complete).toBe(false);
   });
 });
 

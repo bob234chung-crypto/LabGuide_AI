@@ -150,6 +150,8 @@ export function SessionProvider({ initial, children }: { initial: Session; child
           chat: s.chat,
           currentStage: s.currentStage,
           updatedAt: s.updatedAt,
+          failedChecks: s.failedChecks,
+          shownExamples: s.shownExamples,
         })),
     }),
     [session, saveState, update, doFlush],
