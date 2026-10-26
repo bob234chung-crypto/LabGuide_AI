@@ -1,4 +1,12 @@
 import { useEffect, useState } from 'react';
+import { createRequestGate, type RequestGate } from './requestGate';
+
+/** A request gate plus a `busy` flag for rendering (use it for aria-busy, not `disabled`). */
+export function useRequestGate(): { gate: RequestGate; busy: boolean } {
+  const [busy, setBusy] = useState(false);
+  const [gate] = useState(() => createRequestGate(setBusy));
+  return { gate, busy };
+}
 
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);

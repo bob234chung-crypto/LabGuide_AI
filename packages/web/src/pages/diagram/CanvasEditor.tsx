@@ -249,7 +249,7 @@ export function CanvasEditor() {
       setView({ x: 0, y: 0, w: WORLD.width });
       return;
     }
-    const b = sceneBounds(latest.current, 30);
+    const b = sceneBounds(latest.current, 30, layoutLabels(latest.current, { avoidOverlap: false }));
     const w = Math.max(b.w, b.h / aspect, 300);
     setView({ x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - (w * aspect) / 2, w });
   }, [aspect]);
@@ -529,7 +529,7 @@ export function CanvasEditor() {
   }, [ghost?.apparatusId, ghost?.startX]);
 
   /* ---------- Derived ---------- */
-  const labels = useMemo(() => layoutLabels(scene), [scene]);
+  const labels = useMemo(() => layoutLabels(scene, { avoidOverlap: false }), [scene]);
   const selected = scene.items.find((i) => i.id === selectedId) ?? null;
   const blocked = hasSafetyBlock(checks);
   const blockedIds = new Set(checks.filter((c) => c.severity === 'safety_block' && !c.passed).flatMap((c) => c.itemIds ?? []));

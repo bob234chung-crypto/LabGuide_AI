@@ -65,6 +65,7 @@ a { color: var(--teal-dark); }
 .btn-ghost:hover:not(:disabled) { background: rgba(27, 42, 74, 0.06); }
 .btn-small { min-height: 40px; padding: 0.35rem 0.7rem; font-size: 0.92rem; }
 .btn:disabled, .btn[aria-disabled='true'] { opacity: 1; cursor: not-allowed; background: #eceae4; border-color: #a7acb8; color: #555f73; }
+.btn[aria-busy='true']:not(:disabled) { cursor: progress; }
 .btn-icon { padding: 0.4rem; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
 

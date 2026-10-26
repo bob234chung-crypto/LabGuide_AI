@@ -7,6 +7,7 @@ import { CheckList, ErrorState, Icon, SafetyBlock } from '../../components/ui';
 import { CleanDiagram } from '../../canvas/render';
 import { exportPdf, exportPng } from '../../canvas/export';
 import { PlanSummaryContent } from '../stages/SummaryStage';
+import { useRequestGate } from '../../hooks';
 
 export function DiagramResult() {
   const { session, plan } = useSession();
@@ -16,7 +17,7 @@ export function DiagramResult() {
   const [viewing, setViewing] = useState<Diagram | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { gate, busy } = useRequestGate();
   const svgRef = useRef<SVGSVGElement>(null);
   const title = themeTitle(plan.theme.theme, plan.theme.customTitle);
 
@@ -51,17 +52,16 @@ export function DiagramResult() {
   const shown = viewing ?? working;
   const blocked = hasSafetyBlock(working.checks);
 
-  async function run(label: string, fn: () => Promise<void>) {
-    setBusy(true);
-    setMsg(null);
-    try {
-      await fn();
-      setMsg(label);
-    } catch (e) {
-      setMsg(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+  function run(label: string, fn: () => Promise<void>) {
+    void gate.tryRun(async () => {
+      setMsg(null);
+      try {
+        await fn();
+        setMsg(label);
+      } catch (e) {
+        setMsg(errorMessage(e));
+      }
+    });
   }
 
   return (
@@ -90,21 +90,21 @@ export function DiagramResult() {
 
       <div className="btn-row">
         <Link className="btn" to={`/s/${session.id}/diagram/canvas`}><Icon name="pencil" /> Revise on canvas</Link>
-        <button className="btn" disabled={busy} onClick={() => run('PNG downloaded.', () => exportPng(svgRef.current!, plan, title))}>
+        <button className="btn" aria-busy={busy} onClick={() => run('PNG downloaded.', () => exportPng(svgRef.current!, plan, title))}>
           <Icon name="download" /> Export PNG
         </button>
-        <button className="btn" disabled={busy} onClick={() => run('PDF downloaded.', () => exportPdf(svgRef.current!, plan, title))}>
+        <button className="btn" aria-busy={busy} onClick={() => run('PDF downloaded.', () => exportPdf(svgRef.current!, plan, title))}>
           <Icon name="download" /> Export PDF
         </button>
         {!viewing && (
           <>
-            <button className="btn" disabled={busy} onClick={() => run('Version saved.', async () => {
+            <button className="btn" aria-busy={busy} onClick={() => run('Version saved.', async () => {
               await api.saveVersion(session.id, working.scene, `${session.id}-${Date.now()}`);
               await load();
             })}>
               <Icon name="history" /> Save version
             </button>
-            <button className="btn btn-primary" disabled={busy || blocked || working.status === 'submitted'} aria-describedby="submit-why"
+            <button className="btn btn-primary" aria-busy={busy} disabled={blocked || working.status === 'submitted'} aria-describedby="submit-why"
               onClick={() => run('Diagram submitted. Well done!', async () => {
                 const d = await api.submitDiagram(working.id);
                 setWorking(d);

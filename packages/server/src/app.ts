@@ -11,7 +11,7 @@ import {
   emptyPlan,
   emptyScene,
   hasSafetyBlock,
-  isStageUnlocked,
+  isAppStageUnlocked,
   safetyChecklist,
   sanitizeScene,
   themeTitle,
@@ -21,7 +21,6 @@ import {
   type ChatRequest,
   type Diagram,
   type DiagramMethod,
-  type PlanStage,
   type ProviderStatus,
   type Session,
   type SessionSummary,
@@ -296,7 +295,7 @@ export function createApp(opts: { config?: Partial<ServerConfig>; store?: Store;
     const target = String(req.body?.currentStage ?? '') as AppStage;
     if (!APP_STAGES.includes(target)) throw new BadInput('unknown stage');
     const v = validatePlan(s.plan);
-    if (target === 'diagram' ? !v.canGenerateDiagram : !isStageUnlocked(v, target as PlanStage)) {
+    if (!isAppStageUnlocked(v, target)) {
       return res.status(409).json({
         error: 'stage_locked',
         message: 'Finish the earlier stages first.',

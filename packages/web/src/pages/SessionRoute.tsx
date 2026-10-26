@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { PLAN_STAGES, STAGE_TITLES, isStageUnlocked, type AppStage, type PlanStage, type Session } from '@labguide/shared';
+import { PLAN_STAGES, STAGE_TITLES, isAppStageUnlocked, isStageUnlocked, type AppStage, type PlanStage, type Session } from '@labguide/shared';
 import { api } from '../api';
 import { ErrorState, Icon } from '../components/ui';
 import { TutorPanel } from '../components/TutorPanel';
@@ -151,19 +151,19 @@ function SessionLayout() {
   const desktop = useIsDesktop();
   const [drawer, setDrawer] = useState(false);
   const { stage, canvas } = currentStageFromPath(loc.pathname);
+  const locked = !isAppStageUnlocked(validation, stage);
 
   useEffect(() => {
-    void flush();
-    if (session.currentStage !== stage) {
-      api.setProgress(session.id, stage).catch(() => undefined);
-    }
+    // The server answers 409 for a locked stage, so only record progress the plan allows,
+    // and only after pending edits are saved so the server judges the same plan.
+    const record = !locked && session.currentStage !== stage;
+    void flush().then(() => {
+      if (record) api.setProgress(session.id, stage).catch(() => undefined);
+    });
     setDrawer(false);
     window.scrollTo({ top: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, canvas]);
-
-  const locked =
-    stage === 'diagram' ? !validation.canGenerateDiagram : !isStageUnlocked(validation, stage as PlanStage);
 
   return (
     <div className={`layout ${canvas ? 'layout--canvas' : ''}`}>

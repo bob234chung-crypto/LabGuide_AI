@@ -3,18 +3,18 @@ import type { AppStage, ChatMessage, ChatRequest } from '@labguide/shared';
 import { api } from '../api';
 import { useSession, errorMessage } from '../session';
 import { DemoBadge, ErrorState, Icon } from './ui';
+import { useRequestGate } from '../hooks';
 
 export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onClose?: () => void; headingId: string }) {
   const { session, setChat, flush } = useSession();
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { gate, busy } = useRequestGate();
   const [error, setError] = useState<{ message: string; retry: ChatRequest & { retry?: boolean } } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const messages = session.chat.filter((m) => m.stage === stage);
   const hintLevel = session.hintLevels[stage] ?? 0;
 
-  async function send(req: ChatRequest & { retry?: boolean }) {
-    setBusy(true);
+  async function request(req: ChatRequest & { retry?: boolean }) {
     setError(null);
     try {
       await flush();
@@ -27,17 +27,16 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
       if (saved.length) setChat((chat) => [...chat, ...saved]);
       if (req.type === 'message') setText('');
       setError({ message: errorMessage(err), retry: { ...req, retry: saved.length > 0 || req.retry } });
-    } finally {
-      setBusy(false);
     }
   }
+  const send = (req: ChatRequest & { retry?: boolean }) => gate.tryRun(() => request(req));
 
   const entered = useRef(new Set<string>());
   useEffect(() => {
     const key = `${session.id}:${stage}`;
     if (!entered.current.has(key) && !session.chat.some((m) => m.stage === stage && m.role === 'tutor')) {
       entered.current.add(key);
-      void send({ type: 'enter', stage });
+      void gate.track(() => request({ type: 'enter', stage }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, session.id]);
@@ -104,10 +103,10 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
       )}
       <div className="tutor-actions">
         <div className="btn-row">
-          <button className="btn btn-small" disabled={busy} onClick={() => void send({ type: 'check', stage })}>
+          <button className="btn btn-small" aria-busy={busy} onClick={() => void send({ type: 'check', stage })}>
             <Icon name="check" /> Check my work
           </button>
-          <button className="btn btn-small" disabled={busy || hintLevel >= 3} onClick={() => void send({ type: 'hint', stage })}
+          <button className="btn btn-small" aria-busy={busy} disabled={hintLevel >= 3} onClick={() => void send({ type: 'hint', stage })}
             style={{ borderColor: 'var(--amber-line)', background: hintLevel >= 3 ? undefined : 'var(--amber-bg)' }}>
             <Icon name="bulb" /> {hintLevel >= 3 ? 'All 3 hints used' : `Get hint ${hintLevel + 1} of 3`}
           </button>

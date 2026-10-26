@@ -10,7 +10,7 @@
   "scripts": {
     "dev:server": "npm run dev -w @labguide/server",
     "dev:web": "npm run dev -w @labguide/web",
-    "test": "npm test -w @labguide/shared && npm test -w @labguide/server",
+    "test": "npm test -w @labguide/shared && npm test -w @labguide/server && npm test -w @labguide/web",
     "typecheck": "npm run typecheck --workspaces",
     "build": "npm run build -w @labguide/web",
     "check:bundle-secrets": "node scripts/check-bundle-secrets.mjs",

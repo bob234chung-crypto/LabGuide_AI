@@ -1,88 +1,18 @@
-import { ancestors, getApparatus, itemBox, WORLD, type Box, type Scene, type SceneItem } from '@labguide/shared';
+import {
+  ancestors,
+  getApparatus,
+  itemBox,
+  labelTextBox,
+  layoutLabels,
+  WORLD,
+  type Box,
+  type PlacedLabel,
+  type Scene,
+  type SceneItem,
+} from '@labguide/shared';
+
+export { layoutLabels, type PlacedLabel };
 import { ApparatusDrawing } from './ApparatusSvg';
-
-export interface PlacedLabel {
-  key: string;
-  itemId: string;
-  text: string;
-  x: number;
-  y: number;
-  ax: number;
-  ay: number;
-  side: 'left' | 'right';
-  extraIndex?: number;
-}
-
-function outerBox(scene: Scene, item: SceneItem): Box {
-  const top = ancestors(scene, item.id).at(-1);
-  const root = top ? scene.items.find((i) => i.id === top) ?? item : item;
-  const a = itemBox(root);
-  const b = itemBox(item);
-  const x = Math.min(a.x, b.x);
-  const y = Math.min(a.y, b.y);
-  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
-}
-
-const LABEL_GAP = 24;
-
-/**
- * Default leader-line label for every item. Labels sit in a left and a right margin
- * outside the whole setup (textbook style), sorted by height so leader lines do not cross.
- */
-export function layoutLabels(scene: Scene): PlacedLabel[] {
-  const labelled = scene.items.filter((i) => i.label.trim());
-  let minX = Infinity;
-  let maxX = -Infinity;
-  for (const it of scene.items) {
-    const b = itemBox(it);
-    minX = Math.min(minX, b.x);
-    maxX = Math.max(maxX, b.x + b.w);
-  }
-  const mid = (minX + maxX) / 2;
-  const main: PlacedLabel[] = labelled.map((item) => {
-    const box = itemBox(item);
-    const outer = outerBox(scene, item);
-    const cx = box.x + box.w / 2;
-    const side: 'left' | 'right' = cx < mid || (cx === mid && outer.x + outer.w / 2 <= mid) ? 'left' : 'right';
-    const ay = box.y + Math.min(box.h * 0.4, 40);
-    return {
-      key: `m-${item.id}`,
-      itemId: item.id,
-      text: item.label,
-      side,
-      x: side === 'left' ? minX - 40 : maxX + 40,
-      y: ay,
-      ax: side === 'left' ? box.x + Math.min(5, box.w / 2) : box.x + box.w - Math.min(5, box.w / 2),
-      ay,
-    };
-  });
-  for (const side of ['left', 'right'] as const) {
-    const group = main.filter((l) => l.side === side).sort((a, b) => a.ay - b.ay || a.ax - b.ax);
-    for (let i = 1; i < group.length; i++) {
-      if (group[i].y - group[i - 1].y < LABEL_GAP) group[i].y = group[i - 1].y + LABEL_GAP;
-    }
-    const overflow = group.length ? group[group.length - 1].y - (WORLD.bench - 6) : 0;
-    if (overflow > 0) for (const l of group) l.y -= overflow;
-  }
-  const extras: PlacedLabel[] = scene.labels.map((l, i) => {
-    const item = scene.items.find((it) => it.id === l.itemId)!;
-    const box = itemBox(item);
-    const ax = Math.min(Math.max(l.anchor.x, box.x + 4), box.x + box.w - 4);
-    const ay = Math.min(Math.max(l.anchor.y, box.y + 4), box.y + box.h - 4);
-    return {
-      key: `x-${i}`,
-      itemId: l.itemId,
-      text: l.text,
-      x: l.anchor.x,
-      y: l.anchor.y,
-      ax,
-      ay,
-      side: l.anchor.x < box.x + box.w / 2 ? 'left' : 'right',
-      extraIndex: i,
-    };
-  });
-  return [...main, ...extras];
-}
 
 function connectPoint(item: SceneItem, role: 'from' | 'to'): { x: number; y: number } {
   const b = itemBox(item);
@@ -174,8 +104,7 @@ export function Bench({ x0, x1 }: { x0: number; x1: number }) {
   );
 }
 
-export function sceneBounds(scene: Scene, pad = 40): Box {
-  const labels = layoutLabels(scene);
+export function sceneBounds(scene: Scene, pad = 40, labels: PlacedLabel[] = layoutLabels(scene)): Box {
   const xs: number[] = [];
   const ys: number[] = [];
   for (const it of scene.items) {
@@ -184,8 +113,8 @@ export function sceneBounds(scene: Scene, pad = 40): Box {
     ys.push(b.y, b.y + b.h);
   }
   for (const l of labels) {
-    const w = l.text.length * 8.2;
-    xs.push(l.side === 'left' ? l.x - w : l.x + w, l.ax);
+    const t = labelTextBox(l);
+    xs.push(t.x, t.x + t.w, l.ax);
     ys.push(l.y - 12, l.y + 12);
   }
   if (!xs.length) return { x: 0, y: 0, w: WORLD.width, h: WORLD.height };
@@ -197,8 +126,8 @@ export function sceneBounds(scene: Scene, pad = 40): Box {
 
 /** Clean, labelled 2D diagram (no grid, no handles), used for the result view and export. */
 export function CleanDiagram({ scene, title, svgRef }: { scene: Scene; title: string; svgRef?: React.Ref<SVGSVGElement> }) {
-  const b = sceneBounds(scene);
   const labels = layoutLabels(scene);
+  const b = sceneBounds(scene, 40, labels);
   return (
     <svg ref={svgRef} xmlns="http://www.w3.org/2000/svg" viewBox={`${b.x} ${b.y - 30} ${b.w} ${b.h + 30}`}
       className="result-svg" role="img" aria-label={`Labelled diagram: ${title}. ${scene.items.map((i) => i.label || 'unlabelled item').join(', ')}.`}>

@@ -5,3 +5,4 @@ export * from './rules/hazards.js';
 export * from './rules/plan.js';
 export * from './rules/diagram.js';
 export * from './scene.js';
+export * from './labels.js';

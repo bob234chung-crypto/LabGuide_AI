@@ -1,6 +1,7 @@
 import { apparatusName, getApparatus } from '../apparatus.js';
 import {
   PLAN_STAGES,
+  type AppStage,
   type Issue,
   type Plan,
   type PlanStage,
@@ -388,4 +389,9 @@ export function stageIndex(stage: PlanStage): number {
 
 export function isStageUnlocked(v: PlanValidation, stage: PlanStage): boolean {
   return stageIndex(stage) <= stageIndex(v.furthestUnlocked);
+}
+
+/** Same rule as the server's PUT /progress check, so the client never asks for a locked stage. */
+export function isAppStageUnlocked(v: PlanValidation, stage: AppStage): boolean {
+  return stage === 'diagram' ? v.canGenerateDiagram : isStageUnlocked(v, stage);
 }

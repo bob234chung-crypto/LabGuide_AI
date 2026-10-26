@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Plan, Scene } from '../types.js';
-import { emptyPlan, hypothesisForm, validatePlan } from './plan.js';
+import { emptyPlan, hypothesisForm, isAppStageUnlocked, validatePlan } from './plan.js';
 import { detectPlanHazards, safetyChecklist } from './hazards.js';
 import { checkDiagram, hasSafetyBlock } from './diagram.js';
 import { hasUnnegated } from './text.js';
@@ -59,6 +59,18 @@ describe('plan validation', () => {
     const v = validatePlan(emptyPlan());
     expect(v.canGenerateDiagram).toBe(false);
     expect(v.furthestUnlocked).toBe('theme');
+  });
+
+  it('locks summary and diagram while procedure is incomplete or unsafe (client skips the progress request)', () => {
+    const p = goodPlan();
+    p.procedure.push({ id: 's5', text: 'To test for starch, heat the leaf in ethanol over a Bunsen burner.' });
+    const v = validatePlan(p);
+    expect(isAppStageUnlocked(v, 'procedure')).toBe(true);
+    expect(isAppStageUnlocked(v, 'summary')).toBe(false);
+    expect(isAppStageUnlocked(v, 'diagram')).toBe(false);
+    const ok = validatePlan(goodPlan());
+    expect(isAppStageUnlocked(ok, 'summary')).toBe(true);
+    expect(isAppStageUnlocked(ok, 'diagram')).toBe(true);
   });
 
   it('needs at least two controlled variables', () => {
