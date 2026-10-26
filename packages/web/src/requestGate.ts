@@ -1,7 +1,8 @@
 /**
  * Tracks in-flight requests so a button can stay enabled (and keep focus) while busy.
- * `tryRun` is for user actions: a repeat press while anything is in flight is ignored, not
- * queued. `track` always runs, for automatic requests that must not be dropped.
+ * `tryRun` is for user actions: a repeat press while another user action is in flight is
+ * ignored, not queued. `track` is for automatic requests (such as the tutor greeting): they
+ * count as busy but never cause a user's press to be dropped.
  */
 export interface RequestGate {
   readonly busy: boolean;
@@ -11,6 +12,7 @@ export interface RequestGate {
 
 export function createRequestGate(onBusyChange: (busy: boolean) => void = () => undefined): RequestGate {
   let inflight = 0;
+  let userInflight = false;
   const gate: RequestGate = {
     get busy() {
       return inflight > 0;
@@ -24,8 +26,13 @@ export function createRequestGate(onBusyChange: (busy: boolean) => void = () => 
       }
     },
     async tryRun(task) {
-      if (inflight > 0) return undefined;
-      return gate.track(task);
+      if (userInflight) return undefined;
+      userInflight = true;
+      try {
+        return await gate.track(task);
+      } finally {
+        userInflight = false;
+      }
     },
   };
   return gate;
