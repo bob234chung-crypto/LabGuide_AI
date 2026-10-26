@@ -166,7 +166,7 @@ export type AdvanceResult = { ok: true } | { ok: false; failedStage?: ReviewedSt
  */
 export function useAdvance() {
   const { session, flush, applyServer } = useSession();
-  const { gate, busy } = useRequestGate();
+  const gate = useRequestGate();
   const [error, setError] = useState<string | null>(null);
 
   async function run(target: AppStage, method?: 'canvas'): Promise<AdvanceResult> {
@@ -188,8 +188,9 @@ export function useAdvance() {
   }
 
   return {
-    advance: async (target: AppStage, method?: 'canvas') => (await gate.tryRun(() => run(target, method))) ?? { ok: false as const },
-    busy,
+    advance: async (target: AppStage, method?: 'canvas') =>
+      (await gate.tryRun('advance', () => run(target, method))) ?? { ok: false as const },
+    busy: gate.busy('advance'),
     error,
     clearError: () => setError(null),
   };
