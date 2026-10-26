@@ -7,6 +7,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import helmet from 'helmet';
 import {
   apparatusForTheme,
+  isThemeId,
   checkDiagram,
   emptyPlan,
   emptyScene,
@@ -32,7 +33,6 @@ import {
   type SessionSummary,
   type StageReview,
   type StudentMessage,
-  type ThemeId,
   type TutorReply,
 } from '@labguide/shared';
 import {
@@ -352,8 +352,8 @@ export function createApp(
   /* ---------- Apparatus library (read-only) ---------- */
 
   api.get('/apparatus', (req, res) => {
-    const theme = String(req.query.theme ?? '') as ThemeId;
-    const valid = ['photosynthesis', 'enzyme', 'dissolving', 'insulation', 'custom'].includes(theme) ? theme : null;
+    const theme = String(req.query.theme ?? '');
+    const valid = isThemeId(theme) ? theme : null;
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.json(apparatusForTheme(valid));
   });

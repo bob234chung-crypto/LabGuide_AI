@@ -20,6 +20,25 @@ export const THEME_KEYWORDS: Record<Exclude<ThemeId, 'custom'>, string[]> = {
     'insulation', 'insulator', 'insulating', 'heat loss', 'cotton wool', 'foil', 'bubble wrap', 'newspaper',
     'layers', 'thickness', 'cool', 'cools', 'cooling', 'lid', 'hot water',
   ],
+  'iodine-starch': [
+    'iodine', 'starch', 'blue-black', 'brown', 'colour', 'color', 'spotting', 'tile', 'water',
+  ],
+  'leaf-starch': [
+    'leaf', 'leaves', 'starch', 'iodine', 'alcohol', 'ethanol', 'green', 'chlorophyll', 'boil', 'water',
+  ],
+  'oxygen-plant': [
+    'oxygen', 'water plant', 'plant', 'gas', 'splint', 'bubbles', 'light', 'hydrogencarbonate', 'funnel',
+  ],
+  'light-needed': [
+    'light', 'dark', 'foil', 'aluminium', 'aluminum', 'starch', 'leaf', 'leaves', 'iodine', 'covered',
+    'photosynthesis',
+  ],
+  'chlorophyll-needed': [
+    'chlorophyll', 'green', 'variegated', 'starch', 'leaf', 'leaves', 'iodine', 'white', 'photosynthesis',
+  ],
+  'carbon-dioxide-needed': [
+    'carbon dioxide', 'co2', 'starch', 'leaf', 'leaves', 'soda lime', 'iodine', 'air', 'photosynthesis',
+  ],
 };
 
 const STOPWORDS = new Set(
@@ -42,9 +61,27 @@ const VAGUE = /\b(better|best|good|nice|stuff|thing|things|something|affect it|a
 /**
  * Something the student can look at. Direction words (faster, slower, more) are not required.
  * "Photosynthesis" and "enzyme" count, so "carbon dioxide … photosynthesis rate" is enough.
+ * "Starch" counts, so a leaf test can name starch instead of a rate.
  */
 const LOOK_AT =
-  /\b(rate|rates|bubble|bubbles|oxygen|time|times|minute|minutes|second|seconds|colour|color|number|amount|temperature|mass|volume|height|length|distance|speed|ph|count|counts|gas|foam|dissolve|dissolves|dissolving|cool|cools|cooling|photosynthesis|enzyme|enzymes|insulation|sugar|salt|rust|rusts|rusting|grow|grows|growing|hotter|colder|warmer)\b/i;
+  /\b(rate|rates|bubble|bubbles|oxygen|starch|time|times|minute|minutes|second|seconds|colour|color|number|amount|temperature|mass|volume|height|length|distance|speed|ph|count|counts|gas|foam|dissolve|dissolves|dissolving|cool|cools|cooling|photosynthesis|enzyme|enzymes|insulation|sugar|salt|rust|rusts|rusting|grow|grows|growing|hotter|colder|warmer)\b/i;
+
+/** These practicals ask whether a factor is needed. The sentence must name that factor and starch. */
+function starchPractical(theme: ThemeId | null, text: string): boolean | null {
+  if (theme === 'oxygen-plant') {
+    return /\boxygen\b/i.test(text) && /\b(plant|water|gas|light|bubbles?|splint)\b/i.test(text);
+  }
+  const factor: Partial<Record<ThemeId, RegExp>> = {
+    'iodine-starch': /\b(iodine|water|brown|blue|colour|color)\b/i,
+    'leaf-starch': /\b(leaf|leaves|green)\b/i,
+    'light-needed': /\b(light|dark|foil|aluminium|aluminum|covered|uncovered|sunlight|sun)\b/i,
+    'chlorophyll-needed': /\b(chlorophyll|green|variegated|white|pale)\b/i,
+    'carbon-dioxide-needed': /carbon dioxide|\bco2\b/i,
+  };
+  const words = theme ? factor[theme] : undefined;
+  if (!words) return null;
+  return /\bstarch\b/i.test(text) && words.test(text);
+}
 const NON_ANSWER =
   /^(i\s*do\s*n['’]?t\s*know|i\s*dont\s*know|idk|no\s*idea|dunno|not\s*sure|i'?m\s*not\s*sure|i\s*am\s*not\s*sure|unsure|no|yes|ok|okay|n\/?a|none|nil|nothing|don'?t\s*know|\?+)$/i;
 const EMPTY_CONTROL = /^(everything|all|same|the same|nothing|none|everything else|all the same|other things|n\/?a)$/i;
@@ -98,6 +135,8 @@ function aboutExperiment(plan: Plan, text: string): boolean {
  */
 function namesChangeAndLook(plan: Plan, text: string): boolean {
   if (contentWords(text).length < 2) return false;
+  const paired = starchPractical(plan.theme.theme, text);
+  if (paired !== null) return paired;
   if (LOOK_AT.test(text)) return true;
   return plan.theme.theme === 'custom';
 }

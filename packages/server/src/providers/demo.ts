@@ -174,6 +174,21 @@ export class DemoAdapter implements TutorProvider {
 
     if (request.type === 'message') {
       const msg = request.text.toLowerCase();
+      const living =
+        ctx.plan.theme.theme === 'photosynthesis' ||
+        ctx.plan.theme.theme === 'iodine-starch' ||
+        ctx.plan.theme.theme === 'leaf-starch' ||
+        ctx.plan.theme.theme === 'oxygen-plant' ||
+        ctx.plan.theme.theme === 'light-needed' ||
+        ctx.plan.theme.theme === 'chlorophyll-needed' ||
+        ctx.plan.theme.theme === 'carbon-dioxide-needed';
+      if (living && /\bwater\b/.test(msg) && /\b(need|needed|necessary|test|factor|die|kill)\b/.test(msg)) {
+        return {
+          kind: 'socratic',
+          text: 'Water is needed for photosynthesis. You cannot test it, because the plant would die without water.',
+          questions: ['Which factor can you change in this practical?'],
+        };
+      }
       if (/(write|do|give|tell).{0,20}(for me|the answer|my answer|it for me)|just tell me|answer for me/.test(msg)) {
         return {
           kind: 'socratic',

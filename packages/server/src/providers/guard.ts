@@ -50,6 +50,30 @@ export const ANSWER_TEMPLATES: Record<Exclude<ThemeId, 'custom'>, string[]> = {
     'keep the volume of hot water the starting temperature and the size of the beaker the same',
     'record the temperature of the water every minute for ten minutes',
   ],
+  'iodine-starch': [
+    'if starch is present then iodine solution changes from brown to blue-black',
+    'iodine added to water stays brown and iodine added to starch solution turns blue-black',
+  ],
+  'leaf-starch': [
+    'a green leaf that has been in the light contains starch so it turns blue-black with iodine',
+    'boil the leaf in water then warm it in hot alcohol with the burner off before adding iodine',
+  ],
+  'oxygen-plant': [
+    'the gas collected from the water plant is oxygen because a glowing splint relights',
+    'the teacher tests the gas with a glowing splint after the plant has been in bright light',
+  ],
+  'light-needed': [
+    'light is needed for photosynthesis because only the uncovered part of the leaf contains starch',
+    'the part of the leaf covered with aluminium foil is the control and stays brown with iodine',
+  ],
+  'chlorophyll-needed': [
+    'chlorophyll is needed because only the green part of a variegated leaf contains starch',
+    'the non-green part of the variegated leaf is the control and does not turn blue-black',
+  ],
+  'carbon-dioxide-needed': [
+    'carbon dioxide is needed because the leaf left in normal air contains starch and the leaf with soda lime does not',
+    'the teacher handles the soda lime and students wear eye protection and do not touch it',
+  ],
 };
 
 /** Words a tutor uses about any plan. They never make a sentence "new content". */

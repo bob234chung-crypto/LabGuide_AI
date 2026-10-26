@@ -555,6 +555,8 @@ describe('example answers', () => {
     expect(exampleAnswer(plan, 'variables')).toMatch(/change/i);
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/S1 to S2/);
     expect(REVIEW_SYSTEM_PROMPT).toMatch(/if the carbon dioxide is needed for the photosynthesis rate increase/);
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/Light is needed to make starch/);
+    expect(REVIEW_SYSTEM_PROMPT).toMatch(/The water plant makes oxygen/);
   });
 });
 

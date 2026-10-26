@@ -172,7 +172,16 @@ function apparatusStage(plan: Plan): StageValidation {
     });
   }
   const measuring = a.selected.filter((id) => getApparatus(id)?.measuring);
-  if (a.selected.length >= 2 && measuring.length === 0) {
+  // These practicals look at a colour change or a gas test, not a scale reading.
+  const qualitative = new Set([
+    'iodine-starch',
+    'leaf-starch',
+    'oxygen-plant',
+    'light-needed',
+    'chlorophyll-needed',
+    'carbon-dioxide-needed',
+  ]);
+  if (a.selected.length >= 2 && measuring.length === 0 && !qualitative.has(plan.theme.theme ?? '')) {
     issues.push({
       ruleId: 'apparatus_no_measuring',
       stage: 'apparatus',

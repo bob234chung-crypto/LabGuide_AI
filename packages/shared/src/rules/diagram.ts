@@ -122,6 +122,32 @@ export function checkDiagram(scene: Scene, plan: Plan): DiagramCheck[] {
     alternative: needsEyes && !goggles ? 'Add safety goggles to your diagram.' : undefined,
   });
 
+  const sodaLime = items.filter((i) => flags(i)?.corrosive);
+  if (sodaLime.length && !goggles) {
+    checks.push({
+      ruleId: 'diagram_soda_lime',
+      severity: 'safety_block',
+      passed: false,
+      itemIds: sodaLime.map((i) => i.id),
+      message: 'Soda lime is on your diagram, but there is no eye protection.',
+      hazard: 'Soda lime is corrosive. It can burn skin and eyes.',
+      alternative: 'Add safety goggles. Your teacher handles the soda lime. Do not touch it.',
+    });
+  }
+
+  const bareSplint = items.filter((i) => flags(i)?.teacherDemo && !/\bteacher\b/i.test(i.label));
+  if (bareSplint.length) {
+    checks.push({
+      ruleId: 'diagram_splint_teacher',
+      severity: 'safety_block',
+      passed: false,
+      itemIds: bareSplint.map((i) => i.id),
+      message: 'Label the glowing splint as a teacher demonstration.',
+      hazard: 'A glowing splint is done by the teacher, not by a student alone.',
+      alternative: 'Keep the word teacher in the label, or write that your teacher does the splint test.',
+    });
+  }
+
   const tubes = byApp((id) => id === 'delivery-tube');
   const badTubes = tubes.filter((t) => {
     const linked = scene.connections

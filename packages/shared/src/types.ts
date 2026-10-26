@@ -1,4 +1,15 @@
-export type ThemeId = 'photosynthesis' | 'enzyme' | 'dissolving' | 'insulation' | 'custom';
+export type ThemeId =
+  | 'photosynthesis'
+  | 'enzyme'
+  | 'dissolving'
+  | 'insulation'
+  | 'iodine-starch'
+  | 'leaf-starch'
+  | 'oxygen-plant'
+  | 'light-needed'
+  | 'chlorophyll-needed'
+  | 'carbon-dioxide-needed'
+  | 'custom';
 
 export const PLAN_STAGES = [
   'theme',
@@ -193,6 +204,10 @@ export interface Apparatus {
   gasCollector?: boolean;
   eyeProtection?: boolean;
   handProtection?: boolean;
+  /** Corrosive solid or solution. The teacher handles it. */
+  corrosive?: boolean;
+  /** A step the teacher demonstrates. Students do not do it alone. */
+  teacherDemo?: boolean;
   /** Relationship words used in announcements, e.g. "under" for a lamp target. */
   containVerb?: 'inside' | 'under' | 'on' | 'in';
   note?: string;
@@ -203,6 +218,8 @@ export interface ThemeInfo {
   title: string;
   blurb: string;
   note?: string;
+  /** Theme-screen group heading. Themes with no group stay in the main list. */
+  group?: string;
 }
 
 /* ---------- Tutor ---------- */

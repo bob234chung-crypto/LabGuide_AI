@@ -211,6 +211,25 @@ describe('API', () => {
     expect(r.body.common.map((a: { id: string }) => a.id)).toContain('bunsen-burner');
   });
 
+  it('serves the light practical and keeps the rate-of-photosynthesis theme', async () => {
+    const light = await c.agent.get('/api/apparatus?theme=light-needed');
+    const ids = light.body.themeItems.map((a: { id: string }) => a.id);
+    expect(ids).toEqual(expect.arrayContaining(['leaf', 'foil-strip', 'alcohol-tube', 'iodine-solution', 'white-tile']));
+    expect(ids).not.toContain('pondweed');
+    expect(light.body.common.map((a: { id: string }) => a.id)).toEqual(
+      expect.arrayContaining(['bunsen-burner', 'safety-goggles', 'tripod', 'gauze']),
+    );
+    const rate = await c.agent.get('/api/apparatus?theme=photosynthesis');
+    expect(rate.body.themeItems.map((a: { id: string }) => a.id)).toContain('pondweed');
+    expect(rate.body.themeItems.map((a: { id: string }) => a.id)).not.toContain('foil-strip');
+    const { body } = await c.post('/api/sessions');
+    const saved = await c.put(`/api/sessions/${body.session.id}/stages/theme`, {
+      value: { theme: 'light-needed', customTitle: '' },
+    });
+    expect(saved.body.session.plan.theme.theme).toBe('light-needed');
+    expect(saved.body.session.title).toBe('Is light needed?');
+  });
+
   it('deletes all my data', async () => {
     await c.post('/api/sessions');
     await c.del('/api/me');

@@ -26,7 +26,8 @@ const ETHANOL = /\b(ethanol|alcohol|methylated spirits?|meths)\b/i;
 const FLAME = /\b(bunsen|flame|burner|fire|naked flame|directly heat|heat (it )?directly)\b/i;
 const HEAT = /\b(heat|heats|heating|heated|boil|boils|boiling|warm|warms|warming)\b/i;
 const WATER_BATH = /(water bath|hot water|boiling water|beaker of (hot )?water)/i;
-const BURNER_OFF = /(turn(ed)? (it )?off|switch(ed)? (it )?off|put (it )?out|turned-off|away from|far from)/i;
+const BURNER_OFF =
+  /(turn(ed)?( [^.]{0,30})? off|switch(ed)? (it )?off|put (it )?out|turned-off|away from|far from|move(d)? (it )?away)/i;
 const HEATING_ANY = /\b(heat|heats|heating|heated|boil|boiling|bunsen|burner|flame|hot water|water bath|hot|warm)\b/i;
 const EYE = /\b(goggles|eye protection|safety glasses|safety spectacles)\b/i;
 const HANDS = /\b(gloves|tongs|heat-resistant|heat resistant)\b/i;
@@ -39,6 +40,13 @@ const CONCENTRATED = /\b(concentrated|strong|30 ?%|high[- ]concentration|pure)\b
 const DILUTE = /\b(dilute|diluted|weak|low concentration|[1-6] ?%)\b/i;
 const TASTE = /\b(taste|tastes|tasting|lick|licking|drink|drinking|eat|eating|smell|smells|smelling|sniff|sniffing|inhale)\b/i;
 const HOME = /\b(at home|my home|in (my|the) kitchen|my house|home experiment|in my bedroom|in the bathroom)\b/i;
+const SODA_LIME = /\bsoda lime\b/i;
+const SODA_HANDLE =
+  /\b(touch|touches|touching|handle|handles|handling|hold|holds|holding|pour|pours|pouring|add|adds|adding|put|puts|putting|place|places|placing|sprinkle|sprinkles|sprinkling)\b/i;
+const GLOWING_SPLINT = /\bglowing splint\b/i;
+const STUDENT_SPLINT =
+  /\b(i|we|students?)\b[^.]{0,80}\bglowing splint\b|\b(test|use|hold|put)\b[^.]{0,40}\bglowing splint\b/i;
+const TEACHER = /\bteacher\b/i;
 
 function hasApparatus(plan: Plan, pred: (id: string) => boolean): boolean {
   return plan.apparatus.selected.some(pred);
@@ -49,6 +57,8 @@ export interface HazardContext {
   usesHeat: boolean;
   usesPeroxide: boolean;
   collectsGas: boolean;
+  usesSodaLime: boolean;
+  usesSplint: boolean;
   hasEye: boolean;
   hasHands: boolean;
 }
@@ -64,18 +74,25 @@ export function hazardContext(plan: Plan): HazardContext {
     segs.some((s) => hasUnnegated(s.text, HEATING_ANY));
   const usesPeroxide = hasApparatus(plan, (id) => id === 'hydrogen-peroxide') || PEROXIDE.test(all);
   const collectsGas = segs.some((s) => COLLECT.test(s.text) && GAS.test(s.text));
+  const usesSodaLime =
+    hasApparatus(plan, (id) => !!getApparatus(id)?.corrosive) || segs.some((s) => hasUnnegated(s.text, SODA_LIME));
+  const usesSplint =
+    hasApparatus(plan, (id) => !!getApparatus(id)?.teacherDemo) || segs.some((s) => GLOWING_SPLINT.test(s.text));
   const hasEye =
     hasApparatus(plan, (id) => !!getApparatus(id)?.eyeProtection) || EYE.test(all) || !!plan.safety.checklist['goggles'];
   const hasHands =
     hasApparatus(plan, (id) => !!getApparatus(id)?.handProtection) ||
     HANDS.test(all) ||
     !!plan.safety.checklist['hot-hands'];
-  return { usesEthanol, usesHeat, usesPeroxide, collectsGas, hasEye, hasHands };
+  return { usesEthanol, usesHeat, usesPeroxide, collectsGas, usesSodaLime, usesSplint, hasEye, hasHands };
 }
 
 const ETHANOL_HAZARD = 'Ethanol is flammable. Its vapour can catch fire near a flame.';
 const ETHANOL_ALT =
   'Put the tube of ethanol in a beaker of hot water (a hot water bath). Turn the Bunsen burner off and move it away from the ethanol first.';
+const SODA_HAZARD = 'Soda lime is corrosive. It can burn skin and eyes.';
+const SODA_ALT = 'Wear safety goggles. Your teacher handles the soda lime. Do not touch it.';
+const SPLINT_ALT = 'Write that your teacher does the glowing splint test. It is a teacher demonstration, not a step you do alone.';
 
 /** Rule-based hazard detection over the student's own words. Deterministic. */
 export function detectPlanHazards(plan: Plan): Issue[] {
@@ -156,6 +173,33 @@ export function detectPlanHazards(plan: Plan): Issue[] {
         alternative: 'Do the experiment only in the school laboratory, with your teacher, following school lab rules.',
       });
     }
+    for (const sentence of t.split(/(?<=[.!?;])\s+/)) {
+      const handlesSoda =
+        hasUnnegated(sentence, SODA_LIME) && hasUnnegated(sentence, SODA_HANDLE) && !TEACHER.test(sentence);
+      if (handlesSoda) {
+        push({
+          ruleId: 'soda_lime_teacher',
+          stage: s.stage,
+          field: s.field,
+          severity: 'safety_block',
+          message: 'Stop. Do not touch the soda lime.',
+          hazard: SODA_HAZARD,
+          alternative: SODA_ALT,
+        });
+      }
+      const studentSplint = STUDENT_SPLINT.test(sentence) && !TEACHER.test(sentence);
+      if (studentSplint) {
+        push({
+          ruleId: 'splint_teacher',
+          stage: s.stage,
+          field: s.field,
+          severity: 'safety_block',
+          message: 'The glowing splint test is a teacher demonstration.',
+          hazard: 'A glowing splint is a small flame. Students do not do this test alone.',
+          alternative: SPLINT_ALT,
+        });
+      }
+    }
   }
 
   const ethanolAndBurner =
@@ -186,6 +230,19 @@ export function detectPlanHazards(plan: Plan): Issue[] {
       message: 'Use dilute hydrogen peroxide only.',
       hazard: 'Strong hydrogen peroxide can burn skin and eyes.',
       alternative: 'Choose "Dilute hydrogen peroxide" and tick the checklist item about it.',
+    });
+  }
+
+  if (ctx.usesSodaLime && !ctx.hasEye) {
+    const onTray = hasApparatus(plan, (id) => !!getApparatus(id)?.corrosive);
+    push({
+      ruleId: 'soda_lime_goggles',
+      stage: onTray ? 'apparatus' : 'safety',
+      field: onTray ? 'soda-lime' : undefined,
+      severity: 'safety_block',
+      message: 'Stop. Soda lime is in your plan, but there is no eye protection.',
+      hazard: SODA_HAZARD,
+      alternative: SODA_ALT,
     });
   }
 
@@ -250,6 +307,20 @@ export function safetyChecklist(plan: Plan): ChecklistItem[] {
       id: 'gas-method',
       text: 'I will collect gas with a gas syringe or an inverted tube full of water.',
       reason: 'Your plan collects a gas.',
+    });
+  }
+  if (ctx.usesSodaLime) {
+    items.push({
+      id: 'soda-lime-teacher',
+      text: 'My teacher handles the soda lime. I wear eye protection and I do not touch it.',
+      reason: 'Soda lime is corrosive.',
+    });
+  }
+  if (ctx.usesSplint) {
+    items.push({
+      id: 'splint-teacher',
+      text: 'The glowing splint test is a teacher demonstration. I will not do it alone.',
+      reason: 'A glowing splint is done by the teacher.',
     });
   }
   return items;

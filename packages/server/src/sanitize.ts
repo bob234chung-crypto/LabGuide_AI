@@ -1,5 +1,6 @@
 import {
   APPARATUS,
+  isThemeId,
   type ApparatusAnswer,
   type AppStage,
   type PlanStage,
@@ -8,8 +9,6 @@ import {
   type ThemeAnswer,
   type VariablesAnswer,
 } from '@labguide/shared';
-
-const THEME_IDS = ['photosynthesis', 'enzyme', 'dissolving', 'insulation', 'custom'];
 const APP_IDS = new Set(APPARATUS.map((a) => a.id));
 export const APP_STAGES: AppStage[] = [
   'theme',
@@ -42,7 +41,7 @@ export function sanitizeStage(stage: string, value: unknown): { stage: PlanStage
   switch (stage) {
     case 'theme': {
       const v = (value ?? {}) as ThemeAnswer;
-      const theme = v.theme && THEME_IDS.includes(v.theme) ? v.theme : null;
+      const theme = typeof v.theme === 'string' && isThemeId(v.theme) ? v.theme : null;
       return { stage, value: { theme, customTitle: str(v.customTitle, 80) } satisfies ThemeAnswer };
     }
     case 'hypothesis':
