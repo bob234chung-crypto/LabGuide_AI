@@ -29,50 +29,33 @@ export function emptyPlan(): Plan {
   };
 }
 
-const IF_THEN = /^\s*if\b(.{3,}?)\bthen\b(.{3,})$/is;
-const AS_WILL =
-  /^\s*as\b(.{2,}?)\b(increases?|decreases?|changes?|goes up|goes down|rises?|falls?|gets? (bigger|smaller|higher|lower|hotter|colder|warmer|cooler|longer|shorter|stronger|weaker))\b(.*?)\bwill\b(.{3,})$/is;
 const CHANGE_WORDS =
   /\b(increase|increases|decrease|decreases|more|less|faster|slower|higher|lower|bigger|smaller|longer|shorter|rise|fall|change|changes|greater|fewer)\b/i;
 
-export type HypothesisForm = 'if_then' | 'as_will' | null;
+/** A blank or a single word is not a sentence yet. This is not a grammar check. */
+const MIN_SENTENCE_CHARS = 8;
+const MIN_SENTENCE_WORDS = 2;
 
-export function hypothesisForm(text: string): HypothesisForm {
-  const t = text.trim().replace(/[.!]+$/, '');
-  if (IF_THEN.test(t)) return 'if_then';
-  if (AS_WILL.test(t)) return 'as_will';
-  return null;
+/** True when the student has written a sentence, not when it is a strong prediction. */
+export function hypothesisWritten(text: string): boolean {
+  const t = text.trim();
+  return t.length >= MIN_SENTENCE_CHARS && wordCount(t) >= MIN_SENTENCE_WORDS;
 }
 
 function hypothesisStage(plan: Plan): StageValidation {
   const text = plan.hypothesis.trim();
   const issues: Issue[] = [];
   const praise: string[] = [];
-  const form = hypothesisForm(text);
-  if (!text) {
+  if (!hypothesisWritten(text)) {
     issues.push({
       ruleId: 'hypothesis_empty',
       stage: 'hypothesis',
       severity: 'info',
       required: true,
-      message: 'Write your hypothesis in your own words.',
+      message: 'Write your hypothesis as a sentence.',
     });
   } else {
-    if (!form) {
-      issues.push({
-        ruleId: 'hypothesis_structure',
-        stage: 'hypothesis',
-        severity: 'hint',
-        required: true,
-        message: 'Can you write it as "If … then …" or "As [X] changes, [Y] will …"?',
-      });
-    } else {
-      praise.push(
-        form === 'if_then'
-          ? 'Good. Your hypothesis uses the "If … then …" form, so it links a cause to an effect.'
-          : 'Good. Your hypothesis says how one thing changes as another changes.',
-      );
-    }
+    praise.push('Good. You wrote your idea as a sentence.');
     if (wordCount(text) < 7) {
       issues.push({
         ruleId: 'hypothesis_short',
@@ -82,7 +65,7 @@ function hypothesisStage(plan: Plan): StageValidation {
         message: 'Your hypothesis is very short. What will you change, and what do you expect to happen?',
       });
     }
-    if (form && !CHANGE_WORDS.test(text)) {
+    if (!CHANGE_WORDS.test(text)) {
       issues.push({
         ruleId: 'hypothesis_direction',
         stage: 'hypothesis',
@@ -90,7 +73,7 @@ function hypothesisStage(plan: Plan): StageValidation {
         required: true,
         message: 'Which way do you predict the change will go? Will it go up or down?',
       });
-    } else if (form) {
+    } else {
       praise.push('Good. You predicted a direction of change, so your test can check it.');
     }
     if (/\b(better|best|good|nice|work)\b/i.test(text)) {

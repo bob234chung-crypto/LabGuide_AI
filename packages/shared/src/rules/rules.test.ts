@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Plan, Scene } from '../types.js';
-import { emptyPlan, hypothesisForm, isAppStageUnlocked, validatePlan } from './plan.js';
+import { emptyPlan, hypothesisWritten, isAppStageUnlocked, validatePlan } from './plan.js';
 import { detectPlanHazards, safetyChecklist } from './hazards.js';
 import { checkDiagram, hasSafetyBlock } from './diagram.js';
 import { hasUnnegated } from './text.js';
@@ -36,14 +36,47 @@ function goodPlan(): Plan {
   return p;
 }
 
-describe('hypothesis structure', () => {
-  it('accepts If… then… and As… will…', () => {
-    expect(hypothesisForm('If the temperature increases, then the enzyme will work faster.')).toBe('if_then');
-    expect(hypothesisForm('As the temperature increases, the rate of dissolving will increase.')).toBe('as_will');
+describe('hypothesis sentence', () => {
+  it('treats a normal sentence as written, including the example forms', () => {
+    expect(hypothesisWritten('The pondweed makes more bubbles when the lamp is closer.')).toBe(true);
+    expect(hypothesisWritten('Plants like light.')).toBe(true);
+    expect(hypothesisWritten('If the temperature increases, then the enzyme will work faster.')).toBe(true);
+    expect(hypothesisWritten('As the water gets hotter, the sugar dissolves faster.')).toBe(true);
   });
-  it('rejects statements without the structure', () => {
-    expect(hypothesisForm('Plants like light.')).toBeNull();
-    expect(hypothesisForm('If light.')).toBeNull();
+
+  it('treats a blank or one word as not written yet', () => {
+    expect(hypothesisWritten('')).toBe(false);
+    expect(hypothesisWritten('   ')).toBe(false);
+    expect(hypothesisWritten('Bubbles')).toBe(false);
+    expect(hypothesisWritten('Go now')).toBe(false);
+  });
+
+  it('lets a plain testable sentence complete the stage', () => {
+    const p = goodPlan();
+    p.hypothesis = 'The pondweed makes more bubbles when the lamp is closer.';
+    const stage = validatePlan(p).stages.hypothesis;
+    expect(stage.complete).toBe(true);
+    expect(stage.issues.some((i) => i.ruleId === 'hypothesis_structure')).toBe(false);
+    expect(stage.issues.map((i) => i.message).join(' ')).not.toMatch(/If … then|As \[X\]/);
+  });
+
+  it('keeps Next blocked until the sentence is a testable prediction', () => {
+    const p = goodPlan();
+    p.hypothesis = 'Plants like light.';
+    const short = validatePlan(p).stages.hypothesis;
+    expect(short.complete).toBe(false);
+    expect(short.issues.some((i) => i.ruleId === 'hypothesis_short')).toBe(true);
+    expect(short.issues.map((i) => i.message).join(' ')).not.toMatch(/If … then|As \[X\]/);
+
+    p.hypothesis = 'The pondweed sits in water near a bright lamp all day.';
+    const flat = validatePlan(p).stages.hypothesis;
+    expect(flat.complete).toBe(false);
+    expect(flat.issues.some((i) => i.ruleId === 'hypothesis_direction')).toBe(true);
+
+    p.hypothesis = 'Bubbles';
+    const oneWord = validatePlan(p).stages.hypothesis;
+    expect(oneWord.complete).toBe(false);
+    expect(oneWord.issues.some((i) => i.ruleId === 'hypothesis_empty')).toBe(true);
   });
 });
 

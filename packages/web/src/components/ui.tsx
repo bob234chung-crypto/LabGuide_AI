@@ -206,7 +206,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
 }
 
 export const GLOSSARY: [string, string][] = [
-  ['Hypothesis', 'A prediction that you can test. For example: "If … then …".'],
+  ['Hypothesis', 'A prediction that you can test, written as a sentence.'],
   ['Independent variable', 'The one thing you change on purpose.'],
   ['Dependent variable', 'The thing you measure to see the effect.'],
   ['Controlled variable', 'Something you keep the same so the test is fair.'],

@@ -1,6 +1,5 @@
 import { apparatusName, getApparatus } from '../apparatus.js';
 import type { Plan, ReviewedStage, ThemeId } from '../types.js';
-import { hypothesisForm } from './plan.js';
 import { normalise, wordCount } from './text.js';
 
 /** Words that place a sentence on a theme's topic. Also used to spot answers written by a model. */
@@ -69,15 +68,9 @@ function mentionsAny(text: string, words: string[]): boolean {
 function hypothesisQuestions(plan: Plan): string[] {
   const text = plan.hypothesis.trim();
   const q: string[] = [];
-  const form = hypothesisForm(text);
   if (wordCount(text) < 10) q.push('Can you add more detail? What exactly will you change, and what exactly will you measure?');
   if (VAGUE.test(text)) q.push('Which word in your hypothesis is hard to measure? What could you measure instead?');
-  if (form === 'if_then') {
-    const m = /^\s*if\b(.*?)\bthen\b(.*)$/is.exec(text);
-    if (m && (wordCount(m[1]) < 3 || wordCount(m[2]) < 3)) q.push('Does each part of your "If … then …" sentence say clearly what happens?');
-  }
-  const effect = form === 'if_then' ? text.split(/\bthen\b/i).slice(1).join(' ') : text;
-  if (!QUANTITY.test(effect)) q.push('In your prediction, what result will you measure, and will it go up or down?');
+  if (!QUANTITY.test(text)) q.push('In your prediction, what result will you measure, and will it go up or down?');
   const topic = topicWords(plan);
   if (topic.length && !mentionsAny(text, topic)) q.push('How does your hypothesis connect to the topic you chose?');
   return q;

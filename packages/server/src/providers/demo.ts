@@ -45,7 +45,7 @@ const HINTS: Record<AppStage, [string, string, string]> = {
   ],
   hypothesis: [
     'Think about what you will change, and what you expect to happen.',
-    'Start with "If I change…" and finish with "…then the thing I measure will go up (or down)".',
+    'Say what you will change, and whether you think the result will go up or down.',
     'Example on a different topic: "If the height of a ramp increases, then a toy car will roll further." Now try your own topic.',
   ],
   variables: [

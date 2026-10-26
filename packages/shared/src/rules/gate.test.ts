@@ -95,6 +95,18 @@ describe('stricter built-in quality checks', () => {
     }
   });
 
+  it('accepts a plain testable sentence and does not demand a set form', () => {
+    const p = goodPlan();
+    p.hypothesis = 'The pondweed makes more bubbles when the lamp is closer.';
+    expect(heuristicStageReview(p, 'hypothesis')).toEqual({ passed: true, feedbackQuestions: [] });
+
+    p.hypothesis = 'Plants like light.';
+    const weak = heuristicStageReview(p, 'hypothesis');
+    expect(weak.passed).toBe(false);
+    expect(weak.feedbackQuestions.join(' ')).not.toMatch(/If … then|As \[X\]/);
+    expect(weak.feedbackQuestions.every((q) => q.endsWith('?'))).toBe(true);
+  });
+
   it('block weak answers the basic rules allow, with at most 3 questions', () => {
     const p = goodPlan();
     p.hypothesis = 'If the light changes then the plant will do better.';
