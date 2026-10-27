@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import type { TextCard } from '@labguide/shared';
+import { BoxResult } from '../../components/BoxResult';
 import { useSession } from '../../session';
 import { Icon, IssueList, SafetyBlock, useAnnouncer } from '../../components/ui';
 import { StageFooter } from '../SessionRoute';
@@ -81,6 +82,7 @@ export function ProcedureStage() {
               <label htmlFor={`step-${s.id}`} className="sr-only">Step {i + 1}</label>
               <textarea id={`step-${s.id}`} rows={2} maxLength={300} value={s.text} style={{ minHeight: 60 }}
                 onChange={(e) => set(steps.map((x) => (x.id === s.id ? { ...x, text: e.target.value } : x)))} />
+              <BoxResult stage="procedure" boxId={s.id} text={s.text} />
               <div className="step-tools" style={{ marginTop: 6 }}>
                 <button className="btn btn-small" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`Move step ${i + 1} up`}>
                   <Icon name="up" /> Up

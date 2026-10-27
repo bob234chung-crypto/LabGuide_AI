@@ -1,5 +1,5 @@
 import { apparatusName, getApparatus } from '../apparatus.js';
-import type { Plan, ReviewedStage, ThemeId } from '../types.js';
+import type { AnswerBox, Plan, ReviewedStage, ThemeId } from '../types.js';
 import { normalise } from './text.js';
 
 /** Words that place a sentence on a theme's topic. Also used to spot answers written by a model. */
@@ -194,6 +194,83 @@ function procedureQuestions(plan: Plan): string[] {
   const all = steps.join(' ');
   if (!onTopic(plan, all) && !LOOK_AT.test(all)) return ['How do these steps fit your experiment?'];
   return [];
+}
+
+/** The cards Next checks one by one. Empty placeholders are not cards yet. */
+export function answerBoxes(plan: Plan, stage: ReviewedStage): AnswerBox[] {
+  if (stage === 'hypothesis') {
+    return [{ id: 'hypothesis', label: 'hypothesis', text: plan.hypothesis, kind: 'hypothesis' }];
+  }
+  if (stage === 'variables') {
+    const v = plan.variables;
+    return [
+      { id: 'independent', label: 'independent variable', text: v.independent, kind: 'independent' },
+      { id: 'dependent', label: 'dependent variable', text: v.dependent, kind: 'dependent' },
+      ...v.controlled
+        .filter((c) => c.text.trim())
+        .map((c) => ({ id: c.id, label: 'controlled variable', text: c.text, kind: 'controlled' as const })),
+    ];
+  }
+  if (stage === 'apparatus') {
+    return plan.apparatus.selected
+      .filter((id) => (plan.apparatus.justifications[id] ?? '').trim())
+      .map((id) => ({
+        id,
+        label: `reason for the ${apparatusName(id).toLowerCase()}`,
+        text: plan.apparatus.justifications[id] ?? '',
+        kind: 'justification' as const,
+      }));
+  }
+  if (stage === 'procedure') {
+    return plan.procedure
+      .filter((s) => s.text.trim())
+      .map((s) => ({ id: s.id, label: 'procedure step', text: s.text, kind: 'step' as const }));
+  }
+  return [];
+}
+
+const STEP_ACTION =
+  /\b(add|boil|collect|compare|count|cover|heat|leave|measure|note|place|pour|put|read|record|repeat|rinse|set|start|stop|test|time|warm|wash|wrap|write)\b/i;
+
+/**
+ * The easy S1–S2 bar for one card. A simple on-topic answer passes.
+ * The question guides the student and does not contain the answer.
+ */
+export function heuristicBoxReview(plan: Plan, box: AnswerBox): QualityResult {
+  const text = box.text.trim();
+  const fail = (question: string): QualityResult => ({ passed: false, feedbackQuestions: [question] });
+  if (box.kind === 'hypothesis') {
+    const questions = hypothesisQuestions({ ...plan, hypothesis: text });
+    return { passed: questions.length === 0, feedbackQuestions: questions.slice(0, 1) };
+  }
+  if (box.kind === 'independent') {
+    if (isNonAnswer(text)) return fail('What is the one thing you will change?');
+    if (!aboutExperiment(plan, text)) return fail('How does this fit your experiment?');
+    return { passed: true, feedbackQuestions: [] };
+  }
+  if (box.kind === 'dependent') {
+    if (isNonAnswer(text)) return fail('What will you look at?');
+    if (!aboutExperiment(plan, text)) return fail('What will you look at in your test?');
+    return { passed: true, feedbackQuestions: [] };
+  }
+  if (box.kind === 'controlled') {
+    if (isNonAnswer(text) || EMPTY_CONTROL.test(normalise(text)) || contentWords(text).length === 0) {
+      return fail('What will you keep the same? Can you name one thing?');
+    }
+    const ivWords = contentWords(plan.variables.independent);
+    const own = contentWords(text.replace(/^\s*(the\s+)?same\s+/i, ''));
+    if (ivWords.length && own[0] === ivWords[0]) {
+      return fail('Can you keep something the same if you also change it on purpose?');
+    }
+    return { passed: true, feedbackQuestions: [] };
+  }
+  if (box.kind === 'justification') {
+    if (!justificationOk(text)) return fail('What will you use this for?');
+    return { passed: true, feedbackQuestions: [] };
+  }
+  if (isNonAnswer(text) || text.split(/\s+/).length < 2) return fail('What do you do in this step?');
+  if (!aboutExperiment(plan, text) && !STEP_ACTION.test(text)) return fail('How does this step fit your experiment?');
+  return { passed: true, feedbackQuestions: [] };
 }
 
 /**

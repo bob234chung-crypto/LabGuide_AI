@@ -129,7 +129,9 @@ describe('API', () => {
     }
     const third = (await c.agent.get(`/api/sessions/${id}`)).body.session.chat.at(-1);
     expect(third.hintLevel).toBe(3);
-    expect(third.text).toMatch(/different topic/);
+    expect(third.text).toMatch(/could not find the lesson/);
+    expect(third.text).not.toMatch(/different topic|toy car|pendulum/);
+    expect(third.questions.length).toBeLessThanOrEqual(3);
   });
 
   it('keeps the student message when the provider fails', async () => {

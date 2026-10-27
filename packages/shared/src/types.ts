@@ -230,7 +230,15 @@ export type TutorReplyKind = 'socratic' | 'hint' | 'praise' | 'safety' | 'greeti
 export type ReplySource = 'demo' | 'deepseek' | 'rules';
 
 /** Why a demo/template reply was shown while a real provider is active. */
-export type ReplyFallback = 'budget' | 'invalid_output';
+export type ReplyFallback = 'budget' | 'invalid_output' | 'retrieval';
+
+/** One hint-3 choice about this practical. A weak choice explains itself in `why`. */
+export interface HintChoice {
+  id: string;
+  text: string;
+  /** One sentence. Present only when this choice is a weak idea. */
+  why?: string;
+}
 
 export interface TutorReply {
   id: string;
@@ -244,6 +252,13 @@ export interface TutorReply {
   /** Missing on replies saved before real providers existed (they were all demo). */
   provider?: ReplySource;
   fallback?: ReplyFallback;
+  /** Hint 3 only: three short choices about this practical. Not sent for other replies. */
+  choices?: HintChoice[];
+  /**
+   * Short practical name when a lesson brief was used.
+   * The tutor panel may show "Using this practical: …".
+   */
+  practical?: string;
   createdAt: string;
 }
 
@@ -291,7 +306,31 @@ export interface Session {
 /** Stages whose answer quality is reviewed before the student may move past them. */
 export type ReviewedStage = 'hypothesis' | 'variables' | 'apparatus' | 'procedure' | 'summary';
 
-export type ReviewFallbackReason = 'not_configured' | 'budget' | 'unavailable' | 'invalid_output' | 'suspicious_input';
+export type ReviewFallbackReason = 'not_configured' | 'budget' | 'unavailable' | 'invalid_output' | 'suspicious_input' | 'retrieval';
+
+/** One small answer box. Hypothesis is a single box; later stages have one box per card. */
+export type AnswerBoxKind = 'hypothesis' | 'independent' | 'dependent' | 'controlled' | 'justification' | 'step';
+
+export interface AnswerBox {
+  id: string;
+  /** Plain name for the checker, such as "independent variable". */
+  label: string;
+  text: string;
+  kind: AnswerBoxKind;
+}
+
+/** The check for one card. Shown on that card after the student presses Next. */
+export interface BoxReview {
+  id: string;
+  passed: boolean;
+  /** One guiding question when the card did not pass. Empty when it passed. */
+  question: string;
+  source: 'ai' | 'heuristic';
+  fallbackReason?: ReviewFallbackReason;
+  /** Fingerprint of this card's text. A result only counts while the text is unchanged. */
+  answerKey: string;
+  reviewedAt: string;
+}
 
 export interface StageReview {
   stage: ReviewedStage;
@@ -304,6 +343,8 @@ export interface StageReview {
   /** Fingerprint of the answers that were reviewed. A review only counts while the answers are unchanged. */
   answerKey: string;
   reviewedAt: string;
+  /** Per-card results for hypothesis, variables, apparatus and procedure. Summary has none. */
+  boxes?: BoxReview[];
 }
 
 /** A sample answer for this student's topic. Shown only after they click the button. */

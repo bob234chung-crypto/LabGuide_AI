@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Apparatus } from '@labguide/shared';
+import { BoxResult } from '../../components/BoxResult';
 import { useSession } from '../../session';
 import { ErrorState, IssueList, SafetyBlocks } from '../../components/ui';
 import { ApparatusThumb } from '../../canvas/ApparatusSvg';
@@ -82,6 +83,7 @@ export function ApparatusStage() {
                 </label>
                 <textarea id={`just-${item.id}`} rows={2} maxLength={300} value={a.justifications[item.id] ?? ''}
                   onChange={(e) => update('apparatus', { ...a, justifications: { ...a.justifications, [item.id]: e.target.value } })} />
+                <BoxResult stage="apparatus" boxId={item.id} text={a.justifications[item.id] ?? ''} />
                 {issues.length > 0 && <div style={{ marginTop: 6 }}><IssueList issues={issues} /></div>}
               </div>
             );

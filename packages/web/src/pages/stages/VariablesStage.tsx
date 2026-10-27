@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { BoxResult } from '../../components/BoxResult';
 import { useSession } from '../../session';
 import { Icon, IssueList, SafetyBlocks, useAnnouncer } from '../../components/ui';
 import { StageFooter } from '../SessionRoute';
@@ -31,6 +32,7 @@ export function VariablesStage() {
         <label htmlFor="iv">Independent variable <span className="hint-text">— the one thing you change</span></label>
         <input id="iv" type="text" maxLength={160} value={vars.independent}
           onChange={(e) => update('variables', { ...vars, independent: e.target.value })} />
+        <BoxResult stage="variables" boxId="independent" text={vars.independent} />
         <div style={{ marginTop: 6 }}><IssueList issues={fieldIssues('independent')} /></div>
       </div>
 
@@ -38,6 +40,7 @@ export function VariablesStage() {
         <label htmlFor="dv">Dependent variable <span className="hint-text">— what you measure</span></label>
         <input id="dv" type="text" maxLength={160} value={vars.dependent}
           onChange={(e) => update('variables', { ...vars, dependent: e.target.value })} />
+        <BoxResult stage="variables" boxId="dependent" text={vars.dependent} />
         <div style={{ marginTop: 6 }}><IssueList issues={fieldIssues('dependent')} /></div>
       </div>
 
@@ -55,6 +58,7 @@ export function VariablesStage() {
                       controlled: vars.controlled.map((x) => (x.id === c.id ? { ...x, text: e.target.value } : x)),
                     })
                   } />
+                <BoxResult stage="variables" boxId={c.id} text={c.text} />
               </div>
               <button className="btn btn-icon" aria-label={`Remove controlled variable ${i + 1}`}
                 onClick={() => {

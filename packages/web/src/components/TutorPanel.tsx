@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AppStage, ChatMessage, ChatRequest, TutorReply } from '@labguide/shared';
+import type { AppStage, ChatMessage, ChatRequest, HintChoice, TutorReply } from '@labguide/shared';
 import { api } from '../api';
+import { applyCopiedSentence } from '../copyAnswer';
 import { useSession, errorMessage } from '../session';
 import { AiBadge, DemoBadge, ErrorState, Icon, RulesBadge } from './ui';
 import { useRequestGate } from '../hooks';
@@ -8,21 +9,56 @@ import { refreshProviderStatus, usesRealAi, useProviderStatus } from '../provide
 
 /** Says honestly who wrote each reply. Only real DeepSeek replies get the AI label. */
 function ReplyLabel({ m }: { m: TutorReply }) {
+  if (m.choices?.length) return m.demo ? <DemoBadge /> : null;
   if (m.provider === 'deepseek') return <AiBadge />;
   if (m.provider === 'rules') return <RulesBadge />;
   if (m.fallback === 'budget') return <DemoBadge text="Demo mode – daily AI limit reached" />;
   if (m.fallback === 'invalid_output') return <DemoBadge text="Demo mode – built-in safe reply" />;
+  if (m.fallback === 'retrieval') return <DemoBadge text="Demo mode – lesson not found" />;
   return m.demo ? <DemoBadge /> : null;
 }
 
+function HintChoices({
+  choices,
+  pickedId,
+  onPick,
+  onCopy,
+}: {
+  choices: HintChoice[];
+  pickedId?: string;
+  onPick: (id: string) => void;
+  onCopy: (sentence: string) => void;
+}) {
+  const picked = choices.find((c) => c.id === pickedId);
+  return (
+    <div className="hint-choices" role="group" aria-label="Choices for this practical">
+      {choices.map((c) => (
+        <button key={c.id} type="button" className="btn btn-small" aria-pressed={pickedId === c.id} onClick={() => onPick(c.id)}>
+          {c.text}
+        </button>
+      ))}
+      {picked?.why && <p className="hint-why" role="status">{picked.why}</p>}
+      {picked && !picked.why && (
+        <div className="hint-good" role="status">
+          <p style={{ margin: 0 }}>{picked.text}</p>
+          <button type="button" className="btn btn-small" onClick={() => onCopy(picked.text)}>
+            Copy into my answer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onClose?: () => void; headingId: string }) {
-  const { session, setChat, flush } = useSession();
+  const { session, setChat, flush, plan, update } = useSession();
   const status = useProviderStatus();
   const [text, setText] = useState('');
   const gate = useRequestGate();
   const busy = gate.busy();
   const [error, setError] = useState<{ message: string; retry: ChatRequest & { retry?: boolean } } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const [picked, setPicked] = useState<Record<string, string>>({});
   const messages = session.chat.filter((m) => m.stage === stage);
   const hintLevel = session.hintLevels[stage] ?? 0;
 
@@ -59,6 +95,43 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [messages.length]);
+
+  function copyInto(sentence: string) {
+    if (stage === 'hypothesis') {
+      update('hypothesis', applyCopiedSentence(plan.hypothesis, sentence));
+      window.setTimeout(() => document.getElementById('hyp')?.focus(), 0);
+      return;
+    }
+    if (stage === 'variables') {
+      update('variables', { ...plan.variables, independent: applyCopiedSentence(plan.variables.independent, sentence) });
+      window.setTimeout(() => document.getElementById('iv')?.focus(), 0);
+      return;
+    }
+    if (stage === 'apparatus') {
+      const id =
+        plan.apparatus.selected.find((item) => !(plan.apparatus.justifications[item] ?? '').trim()) ?? plan.apparatus.selected[0];
+      if (!id) return;
+      update('apparatus', {
+        ...plan.apparatus,
+        justifications: {
+          ...plan.apparatus.justifications,
+          [id]: applyCopiedSentence(plan.apparatus.justifications[id] ?? '', sentence),
+        },
+      });
+      window.setTimeout(() => document.getElementById(`just-${id}`)?.focus(), 0);
+      return;
+    }
+    if (stage === 'procedure') {
+      const steps = plan.procedure.length ? plan.procedure : [{ id: 's1', text: '' }];
+      const empty = steps.findIndex((s) => !s.text.trim());
+      const index = empty === -1 ? 0 : empty;
+      update(
+        'procedure',
+        steps.map((s, n) => (n === index ? { ...s, text: applyCopiedSentence(s.text, sentence) } : s)),
+      );
+      window.setTimeout(() => document.getElementById(`step-${steps[index].id}`)?.focus(), 0);
+    }
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -105,7 +178,16 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
                 )}
                 <ReplyLabel m={m} />
               </div>
+              {m.practical && <p className="using-practical">Using this practical: {m.practical}</p>}
               {m.text && <p style={{ margin: 0 }}>{m.text}</p>}
+              {m.choices && m.choices.length > 0 && (
+                <HintChoices
+                  choices={m.choices}
+                  pickedId={picked[m.id]}
+                  onPick={(id) => setPicked((prev) => ({ ...prev, [m.id]: id }))}
+                  onCopy={copyInto}
+                />
+              )}
               {m.questions.length > 0 && (
                 <ul aria-label="Questions to think about">
                   {m.questions.map((q) => (

@@ -59,6 +59,12 @@ export function stageAnswerKey(plan: Plan, stage: ReviewedStage): string {
   return fnv1a(text, 0x811c9dc5) + fnv1a(text, 0x01234567);
 }
 
+/** Fingerprint of one card, so two cards with the same words do not share a result. */
+export function boxAnswerKey(theme: string | null, boxId: string, text: string): string {
+  const body = `${theme ?? ''}|${boxId}|${stable(text)}`;
+  return fnv1a(body, 0x811c9dc5);
+}
+
 /** A passed review that still matches the current answers. */
 export function reviewPassed(plan: Plan, reviews: StageReviews, stage: ReviewedStage): boolean {
   const r = reviews?.[stage];

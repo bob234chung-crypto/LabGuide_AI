@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyPlan, validatePlan, type Plan, type ThemeId } from '@labguide/shared';
 import { exampleAnswer } from '../src/examples.js';
+import { hintChoices, lessonThemes, retrieveLesson } from '../src/lessons.js';
 import { DemoAdapter } from '../src/providers/demo.js';
 import { TUTOR_SYSTEM_PROMPT } from '../src/providers/deepseek.js';
 
@@ -42,6 +43,50 @@ describe('examples for each practical', () => {
     co2.theme.theme = 'carbon-dioxide-needed';
     expect(exampleAnswer(co2, 'hypothesis')).toMatch(/carbon dioxide/i);
     expect(exampleAnswer(co2, 'hypothesis')).toMatch(/starch/i);
+  });
+});
+
+const OLDER = ['photosynthesis', 'enzyme', 'dissolving', 'insulation'] as const;
+
+describe('lesson briefs', () => {
+  it('has a short brief and three hint choices for every practical and stage', async () => {
+    const stages = ['theme', 'hypothesis', 'variables', 'apparatus', 'procedure', 'safety', 'summary', 'diagram'] as const;
+    expect(lessonThemes().slice().sort()).toEqual([...THEMES, ...OLDER].slice().sort());
+    for (const theme of lessonThemes()) {
+      const brief = retrieveLesson(theme);
+      expect(brief?.aim.length).toBeGreaterThan(10);
+      expect(brief?.fairTest.length).toBeGreaterThan(10);
+      expect(brief?.names.length).toBeGreaterThan(10);
+      expect(brief?.control.length).toBeGreaterThan(10);
+      expect(brief?.safety).toMatch(/teacher|school lab/i);
+      expect(JSON.stringify(brief)).not.toMatch(HAN);
+      const plan = emptyPlan();
+      plan.theme.theme = theme;
+      for (const stage of stages) {
+        const choices = hintChoices(theme, stage);
+        expect(choices).toHaveLength(3);
+        expect(choices?.filter((c) => !c.why)).toHaveLength(1);
+        expect(choices?.filter((c) => c.why)).toHaveLength(2);
+        for (const choice of choices ?? []) {
+          expect(choice.text.length).toBeGreaterThan(8);
+          expect(choice.text.length).toBeLessThan(180);
+          if (choice.why) expect(choice.why.endsWith('.')).toBe(true);
+        }
+      }
+      const draft = await new DemoAdapter().sendTurn({
+        request: { type: 'hint', stage: 'hypothesis' },
+        stage: 'hypothesis',
+        plan,
+        validation: validatePlan(plan),
+        diagramChecks: [],
+        hintLevel: 3,
+        history: [],
+      });
+      expect(draft.choices?.some((c) => !c.why)).toBe(true);
+      expect(draft.text).not.toMatch(/toy car|different topic|pendulum/);
+    }
+    expect(retrieveLesson('custom')).toBeNull();
+    expect(retrieveLesson(null)).toBeNull();
   });
 });
 

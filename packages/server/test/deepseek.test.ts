@@ -148,6 +148,8 @@ describe('DeepSeek tutor turns', () => {
     expect(call.body.max_tokens).toBeLessThanOrEqual(350);
     expect(call.body.messages[0].role).toBe('system');
     expect(call.body.messages[0].content).toMatch(/at most 3 questions/);
+    expect(call.body.messages[1].content).toMatch(/Practical: Rate of photosynthesis/);
+    expect(call.body.messages[1].content).toMatch(/Do not invent a different experiment/);
     const sent = JSON.stringify(call.body);
     expect(sent).toContain('more bubbles will be produced');
     expect(sent).not.toContain('Ming');
@@ -248,12 +250,13 @@ describe('DeepSeek tutor turns', () => {
     expect(c.ds.completions()).toHaveLength(0);
   });
 
-  it('forces the server hint level and allows a worked example on a different topic at hint 3', async () => {
+  it('gives hint 3 as three choices about this practical and does not ask the model', async () => {
     const c = makeClient();
     await c.init();
     const id = await c.session();
     await c.put(`/api/sessions/${id}/stages/theme`, { value: GOOD.theme });
     for (let i = 0; i < 2; i++) await c.post(`/api/sessions/${id}/chat`, { type: 'hint', stage: 'hypothesis' });
+    const before = c.ds.completions().length;
     c.ds.reply({
       content: {
         kind: 'socratic',
@@ -263,8 +266,26 @@ describe('DeepSeek tutor turns', () => {
     });
     const r = await c.post(`/api/sessions/${id}/chat`, { type: 'hint', stage: 'hypothesis' });
     const reply = r.body.messages.at(-1);
-    expect(reply).toMatchObject({ kind: 'hint', hintLevel: 3, provider: 'deepseek' });
-    expect(reply.text).toMatch(/toy car/);
+    expect(reply).toMatchObject({ kind: 'hint', hintLevel: 3, practical: 'Rate of photosynthesis' });
+    expect(reply.provider).not.toBe('deepseek');
+    expect(reply.text).not.toMatch(/toy car|different topic/);
+    expect(reply.choices).toHaveLength(3);
+    expect(reply.choices.filter((choice: { why?: string }) => !choice.why)).toHaveLength(1);
+    expect(reply.choices.some((choice: { text: string }) => /bubbles/i.test(choice.text))).toBe(true);
+    expect(c.ds.completions()).toHaveLength(before);
+    expect(c.ds.completions().every((call) => /Rate of photosynthesis/.test(call.body.messages[1].content))).toBe(true);
+  });
+
+  it('says when the lesson cannot be found and does not call DeepSeek', async () => {
+    const c = makeClient();
+    await c.init();
+    const id = await c.session();
+    await c.put(`/api/sessions/${id}/stages/theme`, { value: { theme: 'custom', customTitle: 'Bouncing balls' } });
+    const r = await c.post(`/api/sessions/${id}/chat`, { type: 'message', stage: 'hypothesis', text: 'Write my hypothesis' });
+    expect(r.body.messages.at(-1)).toMatchObject({ provider: 'demo', demo: true, fallback: 'retrieval' });
+    expect(r.body.messages.at(-1).text).toMatch(/could not find the lesson/);
+    expect(r.body.messages.at(-1).text).not.toMatch(/toy car|pendulum/);
+    expect(c.ds.completions()).toHaveLength(0);
   });
 });
 
@@ -540,6 +561,64 @@ describe('stage gating', () => {
     expect(fourth.body.session.shownExamples.hypothesis.text).toBe(reveal.body.example.text);
     const again = await c.post(`/api/sessions/${id}/example`, { stage: 'hypothesis' });
     expect(again.body.example.text).toBe(reveal.body.example.text);
+  });
+
+  it('checks each variable card on its own and keeps the student text', async () => {
+    const c = makeClient();
+    await c.init();
+    const id = await c.session();
+    await fill(c, id, 'hypothesis');
+    await c.put(`/api/sessions/${id}/stages/variables`, {
+      value: {
+        independent: 'Distance of the lamp',
+        dependent: 'better',
+        controlled: [
+          { id: 'a', text: 'Temperature of water' },
+          { id: 'b', text: 'Type of pondweed' },
+        ],
+      },
+    });
+    c.ds.reply({ content: { passed: false, feedbackQuestions: ['What will you look at?'] } });
+    const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'apparatus' });
+    expect(r.status).toBe(409);
+    expect(r.body.session.plan.variables.dependent).toBe('better');
+    expect(r.body.session.plan.variables.independent).toBe('Distance of the lamp');
+    const boxes = r.body.session.stageReviews.variables.boxes;
+    expect(boxes).toHaveLength(4);
+    expect(boxes.find((b: { id: string }) => b.id === 'independent')).toMatchObject({ passed: true, source: 'heuristic' });
+    expect(boxes.find((b: { id: string }) => b.id === 'dependent')).toMatchObject({ passed: false, source: 'ai', question: 'What will you look at?' });
+    expect(c.ds.completions()).toHaveLength(1);
+    expect(c.ds.completions()[0].body.messages[1].content).toMatch(/dependent variable/);
+    expect(c.ds.completions()[0].body.messages[1].content).toMatch(/Rate of photosynthesis/);
+    const again = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'apparatus' });
+    expect(again.status).toBe(409);
+    expect(c.ds.completions()).toHaveLength(1);
+  });
+
+  it('uses the fixed check for later cards when DeepSeek fails', async () => {
+    const c = makeClient();
+    await c.init();
+    const id = await c.session();
+    await fill(c, id, 'hypothesis');
+    await c.put(`/api/sessions/${id}/stages/variables`, {
+      value: {
+        independent: 'nice stuff',
+        dependent: 'better',
+        controlled: [
+          { id: 'a', text: 'Temperature of water' },
+          { id: 'b', text: 'Type of pondweed' },
+        ],
+      },
+    });
+    c.ds.reply({ status: 500 }, { status: 500 });
+    const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'apparatus' });
+    expect(r.status).toBe(409);
+    const boxes = r.body.session.stageReviews.variables.boxes;
+    expect(boxes.find((b: { id: string }) => b.id === 'independent').fallbackReason).toBe('unavailable');
+    expect(boxes.find((b: { id: string }) => b.id === 'dependent').source).toBe('heuristic');
+    expect(boxes.find((b: { id: string }) => b.id === 'dependent').fallbackReason).toBe('unavailable');
+    expect(c.ds.completions()).toHaveLength(2);
+    expect(r.body.session.plan.variables.independent).toBe('nice stuff');
   });
 });
 

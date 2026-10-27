@@ -74,6 +74,7 @@ const REVIEW_NOTES: Record<NonNullable<StageReview['fallbackReason']>, string> =
   unavailable: 'The AI tutor is not available right now, so LabGuide used its built-in checks instead.',
   invalid_output: 'The AI tutor’s reply could not be used, so LabGuide used its built-in checks instead.',
   suspicious_input: 'LabGuide found words that are not part of a science answer.',
+  retrieval: 'The lesson for this practical was not found, so LabGuide used its built-in checks.',
 };
 
 /** A sample the student asked to see. Labelled so it is clearly not their own work. */

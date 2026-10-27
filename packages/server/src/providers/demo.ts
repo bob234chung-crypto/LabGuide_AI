@@ -1,4 +1,5 @@
 import { STAGE_TITLES, heuristicStageReview, type AppStage, type Issue } from '@labguide/shared';
+import { hintChoices, hintQuestions } from '../lessons.js';
 import type { PlanReview, ProviderHealth, StageReviewContext, TutorDraft, TutorProvider, TutorTurnContext } from './types.js';
 
 const GREETINGS: Record<AppStage, { text: string; questions: string[] }> = {
@@ -36,49 +37,44 @@ const GREETINGS: Record<AppStage, { text: string; questions: string[] }> = {
   },
 };
 
-/** Hint 1 = gentle nudge, Hint 2 = more specific, Hint 3 = worked example on a DIFFERENT topic. */
-const HINTS: Record<AppStage, [string, string, string]> = {
+/** Hint 1 and hint 2 when no lesson brief exists. Guiding questions only. No other experiment. */
+const HINTS: Record<AppStage, [string, string]> = {
   theme: [
     'Think about which topic you find most interesting.',
-    'Pick a topic where you can change one thing and measure another.',
-    'Example on a different topic: "How does the length of a pendulum affect the time for one swing?" You change the length. You measure the time.',
+    'Pick a topic where you can change one thing and look at another.',
   ],
   hypothesis: [
-    'Think about what you will change, and what you expect to happen.',
-    'Say what you will change, and whether you think the result will go up or down.',
-    'Example on a different topic: "If the height of a ramp increases, then a toy car will roll further." Now try your own topic.',
+    'Think about what you will change, and what you will look at.',
+    'Say what you will change, and what you think you will see.',
   ],
   variables: [
-    'Name one thing you change and one thing you measure.',
-    'Controlled variables are things that could also change your result. Think about amounts, sizes and times.',
-    'Example on a different topic: ramp height and a toy car. Independent: ramp height. Dependent: distance rolled. Controlled: the same car, the same floor.',
+    'Name one thing you change and one thing you look at.',
+    'Controlled variables are things you keep the same. Think about amounts, sizes and times.',
   ],
   apparatus: [
-    'Look at your dependent variable. Which tool measures it?',
-    'Compare two tools. The one with smaller scale divisions gives a more precise reading.',
-    'Example on a different topic: "I chose a measuring cylinder, not a beaker, because its scale is more precise for 50 cm³ of water."',
+    'Look at what you will look at. Which tool helps you see it?',
+    'Say what each important tool is for.',
   ],
   procedure: [
     'Imagine a classmate follows your steps with no help.',
-    'Start each step with an action word, such as "Measure", "Place" or "Record". Say when you repeat the test.',
-    'Example on a different topic (ramp and car): 1. Set the ramp to 10 cm high. 2. Release the car from the top. 3. Measure the distance it rolls. 4. Repeat 3 times and find the average.',
+    'Start each step with an action word, such as "Measure", "Place" or "Record".',
   ],
   safety: [
     'Read your plan again and look for possible dangers.',
-    'Look for heat, glass, chemicals and gases. Think about what protects you from each one.',
-    'Example on a different topic: to melt wax, wear goggles, hold the hot beaker with tongs, and tie long hair back.',
+    'Look for heat, glass, chemicals and gases. What keeps you safe from each one?',
   ],
   summary: [
     'Check that each part of your plan matches the others.',
-    'Use the same words for your variables in the hypothesis, the variables cards and the method.',
-    'Example on a different topic: a ramp plan says "distance rolled" in the hypothesis, the variables and the method. Everything matches.',
+    'Use the same words for your variables in the hypothesis, the cards and the method.',
   ],
   diagram: [
     'Place the item that holds your materials first.',
-    'Show how you measure your dependent variable. Label every item.',
-    'Example on a different topic: a ramp diagram shows the ramp, the car and a metre rule beside it. Each item has a label line.',
+    'Label every item in your setup.',
   ],
 };
+
+export const LESSON_MISS =
+  'I could not find the lesson for this practical, so this reply is from the Demo tutor. I will not invent a different experiment.';
 
 const HINT_QUESTIONS: Record<AppStage, string> = {
   theme: 'Which topic will you choose?',
@@ -164,11 +160,31 @@ export class DemoAdapter implements TutorProvider {
 
     if (request.type === 'hint') {
       const level = ctx.hintLevel;
+      const theme = ctx.plan.theme.theme;
+      if (level === 3) {
+        const choices = hintChoices(theme, stage);
+        if (!choices) {
+          return {
+            kind: 'hint',
+            hintLevel: 3,
+            text: LESSON_MISS,
+            questions: ['What will you change, and what will you look at?'],
+          };
+        }
+        return {
+          kind: 'hint',
+          hintLevel: 3,
+          text: 'Pick the best sentence for this practical.',
+          questions: [],
+          choices,
+        };
+      }
+      const guided = hintQuestions(theme, stage, level);
       return {
         kind: 'hint',
         hintLevel: level,
-        text: `Hint ${level}: ${HINTS[stage][level - 1]}`,
-        questions: [HINT_QUESTIONS[stage]],
+        text: guided ? 'Think about this practical.' : HINTS[stage][level - 1],
+        questions: (guided ?? [HINT_QUESTIONS[stage]]).slice(0, 3),
       };
     }
 

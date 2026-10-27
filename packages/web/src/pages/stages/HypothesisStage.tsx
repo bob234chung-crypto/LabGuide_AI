@@ -1,4 +1,5 @@
 import { hypothesisWritten } from '@labguide/shared';
+import { BoxResult } from '../../components/BoxResult';
 import { useSession } from '../../session';
 import { IssueList, SafetyBlocks } from '../../components/ui';
 import { StageFooter } from '../SessionRoute';
@@ -21,6 +22,7 @@ export function HypothesisStage() {
         <textarea id="hyp" value={plan.hypothesis} maxLength={400} rows={4}
           aria-describedby="hyp-help"
           onChange={(e) => update('hypothesis', e.target.value)} />
+        <BoxResult stage="hypothesis" boxId="hypothesis" text={plan.hypothesis} />
         <p id="hyp-help" className="hint-text" style={{ marginTop: 6 }}>Write it in your own words. The tutor will not write it for you.</p>
       </div>
       <SafetyBlocks issues={v.issues} />

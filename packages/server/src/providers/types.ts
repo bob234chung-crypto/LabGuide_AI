@@ -1,8 +1,10 @@
 import type {
+  AnswerBox,
   AppStage,
   ChatMessage,
   ChatRequest,
   DiagramCheck,
+  HintChoice,
   Plan,
   PlanValidation,
   ReviewedStage,
@@ -19,6 +21,8 @@ export interface TutorTurnContext {
   hintLevel: 1 | 2 | 3;
   /** Last few messages only (context limit). */
   history: ChatMessage[];
+  /** Server-built lesson brief. Never taken from the client. */
+  lessonText?: string | null;
 }
 
 /** The raw shape a provider must return. Validated against a server-side schema. */
@@ -27,6 +31,10 @@ export interface TutorDraft {
   text: string;
   questions: string[];
   hintLevel?: 1 | 2 | 3;
+  /** Hint 3 only. Attached by the server, never trusted from the model. */
+  choices?: HintChoice[];
+  /** Short practical name when a lesson brief was used. */
+  practical?: string;
 }
 
 /** What a stage quality review sees. Only called after the deterministic rules pass. */
@@ -34,6 +42,9 @@ export interface StageReviewContext {
   stage: ReviewedStage;
   plan: Plan;
   validation: PlanValidation;
+  /** Set when checking one card. Summary checks the whole plan and leaves this empty. */
+  box?: AnswerBox;
+  lessonText?: string | null;
 }
 
 /** Structured verdict on one stage. Validated against a server-side schema. */

@@ -183,6 +183,7 @@ export function createApp(
     unavailable: 'The AI tutor is not available right now, so LabGuide used its built-in checks instead.',
     invalid_output: 'The AI tutor’s reply could not be used, so LabGuide used its built-in checks instead.',
     suspicious_input: 'LabGuide found words that are not part of a science answer.',
+    retrieval: 'The lesson for this practical was not found, so LabGuide used its built-in checks.',
   };
 
   /**
@@ -193,24 +194,47 @@ export function createApp(
   async function reviewStage(req: Request, s: Session, stage: ReviewedStage, validation: PlanValidation, deadline: number) {
     const answerKey = stageAnswerKey(s.plan, stage);
     const cached = s.stageReviews?.[stage];
-    const reuse = !!(cached && cached.answerKey === answerKey && (cached.passed || cached.source === 'ai'));
+    const perBox = stage !== 'summary';
+    const reuse = !!(cached && cached.answerKey === answerKey && (cached.passed || cached.source === 'ai') && (!perBox || cached.boxes));
     let review: StageReview;
     let message: TutorReply | null = null;
     if (reuse && cached) {
       review = cached;
-    } else {
-      const result = await providers.reviewStage(db(req), { stage, plan: s.plan, validation }, deadline);
+    } else if (perBox) {
+      const result = await providers.reviewAnswerBoxes(db(req), { stage, plan: s.plan, validation }, cached?.boxes, deadline);
       review = { stage, answerKey, reviewedAt: now(), ...result };
       s.stageReviews = { ...s.stageReviews, [stage]: review };
       if (!review.passed) {
-        const title = stage === 'summary' ? 'whole plan' : STAGE_TITLES[stage].toLowerCase();
         message = {
           id: newId('msg'),
           role: 'tutor',
           stage,
           kind: 'socratic',
           text: [
-            `Not yet. Your ${title} ${stage === 'variables' ? 'need' : 'needs'} a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
+            'Not yet. Look at the cards marked Not yet.',
+            review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          questions: review.feedbackQuestions,
+          demo: false,
+          provider: review.source === 'ai' ? 'deepseek' : 'rules',
+          createdAt: now(),
+        };
+        s.chat.push(message);
+      }
+    } else {
+      const result = await providers.reviewStage(db(req), { stage, plan: s.plan, validation }, deadline);
+      review = { stage, answerKey, reviewedAt: now(), ...result };
+      s.stageReviews = { ...s.stageReviews, [stage]: review };
+      if (!review.passed) {
+        message = {
+          id: newId('msg'),
+          role: 'tutor',
+          stage,
+          kind: 'socratic',
+          text: [
+            `Not yet. Your whole plan needs a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
             review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
           ]
             .filter(Boolean)

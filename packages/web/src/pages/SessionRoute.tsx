@@ -17,7 +17,7 @@ import {
 } from '@labguide/shared';
 import { api } from '../api';
 import { ExampleHelp } from '../components/ExampleHelp';
-import { ErrorState, Icon, ReviewFeedback } from '../components/ui';
+import { ErrorState, Icon } from '../components/ui';
 import { TutorPanel } from '../components/TutorPanel';
 import { SessionProvider, errorMessage, useAdvance, useSession } from '../session';
 import { useIsDesktop } from '../hooks';
@@ -292,7 +292,6 @@ export function StageFooter({ stage }: { stage: PlanStage }) {
   const firstRequired = sv.issues.find((i) => i.required);
   return (
     <div className="stack">
-      {review && !review.passed && sv.complete && <ReviewFeedback review={review} />}
       {reviewedStage && <ExampleHelp stage={reviewedStage} />}
       <div className="stage-footer">
         {prev ? (
@@ -320,8 +319,8 @@ export function StageFooter({ stage }: { stage: PlanStage }) {
             : passed
               ? 'This stage is complete. You can come back and edit it at any time.'
               : review && !review.passed
-                ? 'Improve your answer, then press Next again.'
-                : 'Press Next. The tutor will check your answer before you move on.'}
+                ? 'Next stays off until every card says OK. Change the card, then press Next again.'
+                : 'Press Next. Each card is checked before you move on.'}
         </p>
         {error && <div style={{ flexBasis: '100%' }}><ErrorState message={error} onRetry={() => void goNext()} /></div>}
       </div>
