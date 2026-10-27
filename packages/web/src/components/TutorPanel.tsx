@@ -60,7 +60,11 @@ export function TutorPanel({ stage, onClose, headingId }: { stage: AppStage; onC
   const logRef = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<Record<string, string>>({});
   const messages = session.chat.filter((m) => m.stage === stage);
-  const hintLevel = session.hintLevels[stage] ?? 0;
+  const fromReplies = messages.reduce(
+    (n, m) => (m.role === 'tutor' && m.hintLevel ? Math.max(n, m.hintLevel) : n),
+    0,
+  );
+  const hintLevel = Math.max(session.hintLevels[stage] ?? 0, fromReplies);
 
   async function request(req: ChatRequest & { retry?: boolean }) {
     setError(null);
