@@ -133,17 +133,6 @@ function variablesStage(plan: Plan): StageValidation {
   } else {
     praise.push(`Good. You listed ${filled.length} things to keep the same. That keeps your test fair.`);
   }
-  const dupes = filled.filter((t, i) => filled.indexOf(t) !== i || (t && (t === iv || t === dv)));
-  if (dupes.length) {
-    issues.push({
-      ruleId: 'controlled_duplicate',
-      stage: 'variables',
-      severity: 'hint',
-      required: true,
-      field: 'controlled',
-      message: 'One controlled variable is repeated, or is the same as the variable you change or measure. Can you think of a different one?',
-    });
-  }
   const hyp = normalise(plan.hypothesis);
   const ivWords = iv.split(' ').filter((w) => w.length > 3);
   if (iv && hyp && ivWords.length && !ivWords.some((w) => hyp.includes(w))) {

@@ -1,5 +1,6 @@
 import {
   APPARATUS,
+  CONTROL_MAX,
   isThemeId,
   type ApparatusAnswer,
   type AppStage,
@@ -53,7 +54,7 @@ export function sanitizeStage(stage: string, value: unknown): { stage: PlanStage
         value: {
           independent: str(v.independent, 160),
           dependent: str(v.dependent, 160),
-          controlled: cards(v.controlled ?? [], 8, 160),
+          controlled: cards(v.controlled ?? [], CONTROL_MAX, 160),
         } satisfies VariablesAnswer,
       };
     }

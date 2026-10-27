@@ -232,6 +232,61 @@ describe('API', () => {
     expect(saved.body.session.title).toBe('Is light needed?');
   });
 
+  it('checks an empty extra card and a repeated card, and keeps that card’s hints separate', async () => {
+    const { body } = await c.post('/api/sessions');
+    const id = body.session.id;
+    await fillPlan(c, id);
+    const variables = {
+      independent: 'Distance of the lamp',
+      dependent: 'Number of bubbles per minute',
+      controlled: [
+        { id: 'a', text: 'Temperature of water' },
+        { id: 'b', text: 'Type of pondweed' },
+        { id: 'e', text: '' },
+      ],
+    };
+    await c.put(`/api/sessions/${id}/stages/variables`, { value: variables });
+    const empty = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'apparatus' });
+    expect(empty.status).toBe(409);
+    const emptyBox = empty.body.session.stageReviews.variables.boxes.find((b: { id: string }) => b.id === 'e');
+    expect(emptyBox).toMatchObject({ passed: false, question: 'Write something you keep the same, or remove this card.' });
+    expect(empty.body.messages[0].text.startsWith('Not yet.')).toBe(true);
+    expect(JSON.stringify(empty.body.messages)).not.toMatch(/\bGood\b/);
+    expect(empty.body.session.plan.variables.controlled[2].text).toBe('');
+
+    await c.put(`/api/sessions/${id}/stages/variables`, {
+      value: { ...variables, controlled: variables.controlled.map((card) => (card.id === 'e' ? { ...card, text: 'Temperature of water' } : card)) },
+    });
+    const repeat = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'apparatus' });
+    expect(repeat.status).toBe(409);
+    const repeatBox = repeat.body.session.stageReviews.variables.boxes.find((b: { id: string }) => b.id === 'e');
+    expect(repeatBox.question).toBe('You already wrote this. Remove it, or name a different thing you keep the same.');
+    expect(repeat.body.messages[0].text.startsWith('Not yet.')).toBe(true);
+    expect(JSON.stringify(repeat.body.messages)).not.toMatch(/\bGood\b/);
+    expect(repeat.body.session.plan.variables.controlled.find((card: { id: string }) => card.id === 'a').text).toBe('Temperature of water');
+
+    const seven = await c.put(`/api/sessions/${id}/stages/variables`, {
+      value: {
+        ...variables,
+        controlled: Array.from({ length: 7 }, (_, i) => ({ id: `c${i}`, text: `control ${i} water` })),
+      },
+    });
+    expect(seven.body.session.plan.variables.controlled).toHaveLength(6);
+
+    const hint = await c.post(`/api/sessions/${id}/chat`, { type: 'hint', stage: 'variables', boxId: 'e' });
+    expect(hint.body.messages.at(-1)).toMatchObject({ boxId: 'e', hintLevel: 1 });
+    expect(`${hint.body.messages.at(-1).text} ${hint.body.messages.at(-1).questions.join(' ')}`).not.toMatch(/\bGood\b/);
+    const third = await c.post(`/api/sessions/${id}/chat`, { type: 'hint', stage: 'variables', boxId: 'e' });
+    await c.post(`/api/sessions/${id}/chat`, { type: 'hint', stage: 'variables', boxId: 'e' });
+    const saved = await c.agent.get(`/api/sessions/${id}`);
+    const cardHints = saved.body.session.chat.filter((m: { boxId?: string }) => m.boxId === 'e');
+    expect(cardHints.map((m: { hintLevel?: number }) => m.hintLevel)).toEqual([1, 2, 3]);
+    expect(cardHints[2].choices).toHaveLength(3);
+    expect(saved.body.session.hintLevels.variables).toBeUndefined();
+    expect(saved.body.session.boxHintLevels['variables:e']).toBe(3);
+    expect(third.body.messages.at(-1).hintLevel).toBe(2);
+  });
+
   it('deletes all my data', async () => {
     await c.post('/api/sessions');
     await c.del('/api/me');

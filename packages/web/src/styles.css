@@ -261,6 +261,10 @@ input[type='checkbox'] { width: 24px; height: 24px; accent-color: var(--teal); f
   margin: 0.45rem 0 0; font-weight: 700; color: var(--teal-dark);
 }
 .box-result { margin-top: 0.45rem; }
+.card-hint {
+  margin-top: 0.55rem; padding: 0.6rem 0.7rem; border: 2px solid var(--amber-line);
+  border-radius: 10px; background: #fff; display: grid; gap: 0.45rem;
+}
 .tutor-actions { padding: 0.6rem; border-top: 1.5px solid var(--line); display: grid; gap: 0.5rem; min-width: 0; max-width: 100%; }
 .tutor-actions .btn-row { min-width: 0; max-width: 100%; }
 .tutor-actions .btn { max-width: 100%; height: auto; white-space: normal; text-align: left; }

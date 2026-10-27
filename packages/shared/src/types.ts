@@ -254,6 +254,8 @@ export interface TutorReply {
   fallback?: ReplyFallback;
   /** Hint 3 only: three short choices about this practical. Not sent for other replies. */
   choices?: HintChoice[];
+  /** Set when this hint belongs to one answer card, not the whole stage. */
+  boxId?: string;
   /**
    * Short practical name when a lesson brief was used.
    * The tutor panel may show "Using this practical: …".
@@ -274,7 +276,7 @@ export type ChatMessage = TutorReply | StudentMessage;
 
 export type ChatRequest =
   | { type: 'message'; stage: AppStage; text: string }
-  | { type: 'hint'; stage: AppStage }
+  | { type: 'hint'; stage: AppStage; boxId?: string }
   | { type: 'check'; stage: AppStage }
   | { type: 'enter'; stage: AppStage };
 
@@ -290,6 +292,8 @@ export interface Session {
   workingDiagram: Diagram | null;
   chat: ChatMessage[];
   hintLevels: Partial<Record<AppStage, number>>;
+  /** Hint count for one card, keyed by `${stage}:${boxId}`. */
+  boxHintLevels?: Partial<Record<string, number>>;
   /** Quality reviews that gate moving on. Missing on sessions created before gating existed. */
   stageReviews?: Partial<Record<ReviewedStage, StageReview>>;
   /**

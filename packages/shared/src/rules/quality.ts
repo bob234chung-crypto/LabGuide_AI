@@ -164,9 +164,16 @@ function variablesQuestions(plan: Plan): string[] {
   if (controls.some((c) => isNonAnswer(c) || EMPTY_CONTROL.test(c) || contentWords(c).length === 0)) {
     q.push('Which things will you keep the same? Can you name one?');
   }
+  if (v.controlled.slice(CONTROL_BASE).some((c) => !c.text.trim())) q.push(EXTRA_EMPTY);
+  const seen = new Set<string>();
+  for (const c of controls) {
+    const key = normalise(c);
+    if (seen.has(key)) q.push(EXTRA_REPEAT);
+    seen.add(key);
+  }
   const ivWords = contentWords(iv);
   if (ivWords.length && controls.some((c) => contentWords(c.replace(/^\s*(the\s+)?same\s+/i, ''))[0] === ivWords[0])) {
-    q.push('Can you keep something the same if you also change it on purpose?');
+    q.push(EXTRA_SECOND_CHANGE);
   }
   return q;
 }
@@ -196,7 +203,19 @@ function procedureQuestions(plan: Plan): string[] {
   return [];
 }
 
-/** The cards Next checks one by one. Empty placeholders are not cards yet. */
+/** The first two controlled cards are required. Students may add up to four more. */
+export const CONTROL_BASE = 2;
+export const CONTROL_EXTRA_MAX = 4;
+export const CONTROL_MAX = CONTROL_BASE + CONTROL_EXTRA_MAX;
+
+export const EXTRA_EMPTY = 'Write something you keep the same, or remove this card.';
+export const EXTRA_SECOND_CHANGE = 'A fair test changes only one thing. Keep this the same, or remove this card.';
+export const EXTRA_REPEAT = 'You already wrote this. Remove it, or name a different thing you keep the same.';
+
+/** Fixed card failures. The model must not replace these instructions. */
+export const FIXED_CARD_FAILS = new Set([EXTRA_EMPTY, EXTRA_SECOND_CHANGE, EXTRA_REPEAT]);
+
+/** The cards Next checks one by one. Empty base cards are not cards yet. Empty extra cards are. */
 export function answerBoxes(plan: Plan, stage: ReviewedStage): AnswerBox[] {
   if (stage === 'hypothesis') {
     return [{ id: 'hypothesis', label: 'hypothesis', text: plan.hypothesis, kind: 'hypothesis' }];
@@ -206,9 +225,11 @@ export function answerBoxes(plan: Plan, stage: ReviewedStage): AnswerBox[] {
     return [
       { id: 'independent', label: 'independent variable', text: v.independent, kind: 'independent' },
       { id: 'dependent', label: 'dependent variable', text: v.dependent, kind: 'dependent' },
-      ...v.controlled
-        .filter((c) => c.text.trim())
-        .map((c) => ({ id: c.id, label: 'controlled variable', text: c.text, kind: 'controlled' as const })),
+      ...v.controlled.flatMap((c, index) => {
+        const extra = index >= CONTROL_BASE;
+        if (!c.text.trim() && !extra) return [];
+        return [{ id: c.id, label: extra ? 'extra controlled variable' : 'controlled variable', text: c.text, kind: 'controlled' as const }];
+      }),
     ];
   }
   if (stage === 'apparatus') {
@@ -254,14 +275,23 @@ export function heuristicBoxReview(plan: Plan, box: AnswerBox): QualityResult {
     return { passed: true, feedbackQuestions: [] };
   }
   if (box.kind === 'controlled') {
+    const index = plan.variables.controlled.findIndex((c) => c.id === box.id);
+    if (!text) return fail(EXTRA_EMPTY);
     if (isNonAnswer(text) || EMPTY_CONTROL.test(normalise(text)) || contentWords(text).length === 0) {
-      return fail('What will you keep the same? Can you name one thing?');
+      return fail(index >= CONTROL_BASE ? EXTRA_EMPTY : 'What will you keep the same? Can you name one thing?');
+    }
+    const key = normalise(text);
+    const earlier = [
+      plan.variables.independent,
+      plan.variables.dependent,
+      ...plan.variables.controlled.slice(0, Math.max(index, 0)).map((c) => c.text),
+    ];
+    if (key.length >= 3 && earlier.some((other) => normalise(other) === key)) {
+      return fail(key === normalise(plan.variables.independent) ? EXTRA_SECOND_CHANGE : EXTRA_REPEAT);
     }
     const ivWords = contentWords(plan.variables.independent);
     const own = contentWords(text.replace(/^\s*(the\s+)?same\s+/i, ''));
-    if (ivWords.length && own[0] === ivWords[0]) {
-      return fail('Can you keep something the same if you also change it on purpose?');
-    }
+    if (ivWords.length && own[0] === ivWords[0]) return fail(EXTRA_SECOND_CHANGE);
     return { passed: true, feedbackQuestions: [] };
   }
   if (box.kind === 'justification') {

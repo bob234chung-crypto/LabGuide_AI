@@ -2,6 +2,7 @@ import {
   answerBoxes,
   boxAnswerKey,
   containsGood,
+  FIXED_CARD_FAILS,
   heuristicBoxReview,
   heuristicStageReview,
   type AnswerBox,
@@ -310,6 +311,11 @@ export class ProviderRegistry {
       const easy = heuristicBoxReview(ctx.plan, box);
       if (easy.passed) {
         out.push({ id: box.id, passed: true, question: '', source: 'heuristic', answerKey: key, reviewedAt });
+        continue;
+      }
+      const fixedQuestion = easy.feedbackQuestions[0] ?? '';
+      if (FIXED_CARD_FAILS.has(fixedQuestion)) {
+        out.push({ id: box.id, passed: false, question: fixedQuestion, source: 'heuristic', answerKey: key, reviewedAt });
         continue;
       }
       const reasonNow = (): ReviewFallbackReason | null => {

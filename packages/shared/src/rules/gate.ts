@@ -46,7 +46,7 @@ const nonEmpty = <T extends { text: string }>(cards: T[]) => cards.filter((c) =>
  * they must agree with, so changing the hypothesis also re-opens the variables review.
  */
 export function stageAnswerKey(plan: Plan, stage: ReviewedStage): string {
-  const vars = { iv: plan.variables.independent, dv: plan.variables.dependent, cv: nonEmpty(plan.variables.controlled) };
+  const vars = { iv: plan.variables.independent, dv: plan.variables.dependent, cv: plan.variables.controlled.map((c) => c.text) };
   const app = { sel: [...plan.apparatus.selected].sort(), just: plan.apparatus.justifications };
   const parts: Record<ReviewedStage, unknown> = {
     hypothesis: [plan.theme, plan.hypothesis],

@@ -516,7 +516,9 @@ export function createApp(
       if (!['message', 'hint', 'check', 'enter'].includes(type)) throw new BadInput('unknown type');
       const text = String(body.text ?? '').slice(0, 500).trim();
       if (type === 'message' && !text) throw new BadInput('empty message');
-      const request = (type === 'message' ? { type, stage, text } : { type, stage }) as ChatRequest;
+      const boxId =
+        type === 'hint' && typeof body.boxId === 'string' && body.boxId.trim() ? body.boxId.trim().slice(0, 40) : undefined;
+      const request = (type === 'message' ? { type, stage, text } : type === 'hint' ? { type, stage, boxId } : { type, stage }) as ChatRequest;
 
       const student = db(req).data.students[req.studentId!];
       const day = now().slice(0, 10);
@@ -535,7 +537,8 @@ export function createApp(
       if (type === 'enter' && s.chat.some((m) => m.role === 'tutor' && m.stage === stage)) {
         return res.json({ messages: [] });
       }
-      let hintLevel = (s.hintLevels[stage] ?? 0) as number;
+      const hintKey = boxId ? `${stage}:${boxId}` : '';
+      let hintLevel = (boxId ? s.boxHintLevels?.[hintKey] : s.hintLevels[stage]) ?? 0;
       if (type === 'hint') hintLevel = Math.min(3, hintLevel + 1);
       touch(req, s);
 
@@ -554,7 +557,8 @@ export function createApp(
           },
           { simulateError: student.simulateErrors && type !== 'enter' },
         );
-        if (type === 'hint') s.hintLevels[stage] = hintLevel;
+        if (type === 'hint' && boxId) s.boxHintLevels = { ...s.boxHintLevels, [hintKey]: hintLevel };
+        else if (type === 'hint') s.hintLevels[stage] = hintLevel;
         const reply: TutorReply = {
           id: newId('msg'),
           role: 'tutor',
@@ -564,6 +568,7 @@ export function createApp(
           ...(fallback ? { fallback } : {}),
           createdAt: now(),
           ...draft,
+          ...(boxId ? { boxId } : {}),
         };
         s.chat.push(reply);
         if (s.chat.length > 400) s.chat = s.chat.slice(-400);

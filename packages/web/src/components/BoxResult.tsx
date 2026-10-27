@@ -1,4 +1,5 @@
 import { boxAnswerKey, goodCardReply, notYetReply, type AnswerBoxKind, type ReviewFallbackReason, type ReviewedStage } from '@labguide/shared';
+import { CardHint } from './CardHint';
 import { useSession } from '../session';
 
 function kindFor(stage: ReviewedStage, boxId: string): AnswerBoxKind {
@@ -33,6 +34,7 @@ export function BoxResult({ stage, boxId, text }: { stage: ReviewedStage; boxId:
     <div className="issue issue-hint box-result" role="status" data-box-result="not-yet">
       <p style={{ margin: 0 }}>{notYetReply(box.question)}</p>
       {box.fallbackReason && <p className="hint-text" style={{ margin: '0.35rem 0 0' }}>{NOTES[box.fallbackReason]}</p>}
+      <CardHint stage={stage} boxId={boxId} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { CONTROL_MAX } from '@labguide/shared';
 import { BoxResult } from '../../components/BoxResult';
 import { useSession } from '../../session';
 import { Icon, IssueList, SafetyBlocks, useAnnouncer } from '../../components/ui';
@@ -70,9 +71,13 @@ export function VariablesStage() {
             </div>
           ))}
         </div>
-        <button className="btn" style={{ marginTop: 10 }} onClick={addControlled} disabled={vars.controlled.length >= 8}>
-          <Icon name="plus" /> Add a controlled variable
-        </button>
+        {vars.controlled.length >= CONTROL_MAX ? (
+          <p className="hint-text" style={{ marginTop: 10 }}>Four extra cards is enough.</p>
+        ) : (
+          <button className="btn" style={{ marginTop: 10 }} onClick={addControlled}>
+            <Icon name="plus" /> Add a controlled variable
+          </button>
+        )}
       </fieldset>
 
       <SafetyBlocks issues={v.issues} />

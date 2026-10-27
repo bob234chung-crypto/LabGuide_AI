@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Plan, StageReview } from '../types.js';
 import { canOpenDiagram, gatedFurthest, isGatedStageUnlocked, reviewsNeededFor, stageAnswerKey } from './gate.js';
 import { emptyPlan, validatePlan } from './plan.js';
-import { heuristicStageReview } from './quality.js';
+import { answerBoxes, EXTRA_EMPTY, EXTRA_REPEAT, EXTRA_SECOND_CHANGE, heuristicBoxReview, heuristicStageReview } from './quality.js';
+import { notYetReply } from './tone.js';
 import { safetyChecklist } from './hazards.js';
 
 function goodPlan(): Plan {
@@ -78,6 +79,11 @@ describe('stage gate', () => {
     q.variables = { controlled: q.variables.controlled.map((c) => ({ text: `  ${c.text} `, id: c.id })), dependent: q.variables.dependent, independent: q.variables.independent } as Plan['variables'];
     expect(stageAnswerKey(q, 'variables')).toBe(stageAnswerKey(p, 'variables'));
     expect(stageAnswerKey(p, 'variables')).not.toBe(stageAnswerKey(p, 'hypothesis'));
+    const extra = goodPlan();
+    extra.variables.controlled = [...extra.variables.controlled, { id: 'e', text: '' }];
+    expect(stageAnswerKey(extra, 'variables')).not.toBe(stageAnswerKey(p, 'variables'));
+    const removed = { ...extra, variables: { ...extra.variables, controlled: extra.variables.controlled.filter((c) => c.id !== 'e') } };
+    expect(stageAnswerKey(removed, 'variables')).toBe(stageAnswerKey(p, 'variables'));
   });
 
   it('lists the reviews needed for a target', () => {
@@ -167,7 +173,23 @@ describe('junior-form quality checks', () => {
     same.variables.controlled.push({ id: 'c', text: 'Same piece of pondweed' });
     expect(heuristicStageReview(same, 'variables').passed).toBe(true);
     same.variables.controlled.push({ id: 'd', text: 'The distance from the lamp' });
-    expect(heuristicStageReview(same, 'variables').feedbackQuestions).toContain('Can you keep something the same if you also change it on purpose?');
+    expect(heuristicStageReview(same, 'variables').feedbackQuestions).toContain(
+      'A fair test changes only one thing. Keep this the same, or remove this card.',
+    );
+
+    const extra = goodPlan();
+    extra.variables.controlled.push({ id: 'e', text: '' });
+    const empty = answerBoxes(extra, 'variables').find((b) => b.id === 'e');
+    expect(empty).toBeTruthy();
+    expect(heuristicBoxReview(extra, empty!).feedbackQuestions).toEqual([EXTRA_EMPTY]);
+    expect(notYetReply(EXTRA_EMPTY).startsWith('Not yet.')).toBe(true);
+    expect(notYetReply(EXTRA_EMPTY)).not.toMatch(/\bGood\b/);
+    extra.variables.controlled[2] = { id: 'e', text: 'Temperature of water' };
+    const repeat = answerBoxes(extra, 'variables').find((b) => b.id === 'e');
+    expect(heuristicBoxReview(extra, repeat!).feedbackQuestions).toEqual([EXTRA_REPEAT]);
+    extra.variables.controlled[2] = { id: 'e', text: 'The distance from the lamp' };
+    const second = answerBoxes(extra, 'variables').find((b) => b.id === 'e');
+    expect(heuristicBoxReview(extra, second!).feedbackQuestions[0]).toBe(EXTRA_SECOND_CHANGE);
 
     const a = goodPlan();
     a.apparatus.justifications.stopwatch = 'It is useful.';
