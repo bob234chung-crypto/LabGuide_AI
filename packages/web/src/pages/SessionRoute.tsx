@@ -283,9 +283,13 @@ export function StageFooter({ stage }: { stage: PlanStage }) {
   const saved = reviewedStage ? session.stageReviews?.[reviewedStage] : undefined;
   const review = reviewedStage && saved && saved.answerKey === stageAnswerKey(plan, reviewedStage) ? saved : undefined;
   const passed = !reviewedStage || reviewPassed(plan, session.stageReviews, reviewedStage);
+  // A failed check for these exact answers keeps Next off. Editing a card changes the
+  // answer key, so Next comes back and the student can ask for another check.
+  const held = Boolean(review && !review.passed);
+  const nextEnabled = sv.complete && !held;
 
   async function goNext() {
-    if (!next) return;
+    if (!next || !nextEnabled) return;
     const r = await advance(next);
     if (r.ok) nav(`/s/${session.id}/${next}`);
   }
@@ -304,8 +308,8 @@ export function StageFooter({ stage }: { stage: PlanStage }) {
           </Link>
         )}
         {next && (
-          <button className="btn btn-primary" onClick={() => void goNext()} disabled={!sv.complete} aria-busy={busy}
-            aria-describedby={`why-${stage}`}>
+          <button className={nextEnabled ? 'btn btn-primary' : 'btn'} type="button" onClick={() => void goNext()}
+            disabled={!nextEnabled} aria-busy={busy} aria-describedby={`why-${stage}`}>
             {busy ? 'Checking your answer…' : <>Next: {STAGE_TITLES[next]} <Icon name="arrowRight" /></>}
           </button>
         )}
