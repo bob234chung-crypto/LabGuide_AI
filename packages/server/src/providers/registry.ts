@@ -1,6 +1,7 @@
 import {
   answerBoxes,
   boxAnswerKey,
+  containsGood,
   heuristicBoxReview,
   heuristicStageReview,
   type AnswerBox,
@@ -22,6 +23,7 @@ import { GeminiAdapter } from './gemini.js';
 import { guardQuestions, guardTutorDraft } from './guard.js';
 import { PoeAdapter } from './poe.js';
 import { validateStageReview, validateTutorDraft } from './schema.js';
+import { applyTutorTone } from './tone.js';
 import {
   ProviderError,
   type StageReviewContext,
@@ -76,6 +78,18 @@ function stageTexts(ctx: StageReviewContext): string[] {
 
 export function looksLikeInjection(ctx: StageReviewContext): boolean {
   return stageTexts(ctx).some((t) => INJECTION.test(t));
+}
+
+/** A failed-card question must not praise the wrong idea or use the word Good. */
+function safeFailQuestion(modelQuestion: string | undefined, fallback: string): string {
+  const q = (modelQuestion ?? '').trim();
+  if (!q || containsGood(q) || /\byou (will|chose|named|said|wrote|have|are)\b/i.test(q)) return fallback;
+  return q;
+}
+
+function stageHasProblems(ctx: TutorTurnContext): boolean {
+  if (ctx.stage === 'diagram') return ctx.diagramChecks.some((c) => !c.passed && c.severity !== 'safety_block');
+  return ctx.validation.stages[ctx.stage].issues.some((i) => i.severity !== 'safety_block');
 }
 
 export class ProviderRegistry {
@@ -156,6 +170,12 @@ export class ProviderRegistry {
     const lessonText = formatLesson(ctx.plan.theme.theme, ctx.stage);
     const turn: TutorTurnContext = { ...ctx, lessonText };
     const stamp = (draft: TutorDraft): TutorDraft => (lesson ? { ...draft, practical: lesson.practical } : draft);
+    const tone = (draft: TutorDraft): TutorDraft =>
+      applyTutorTone(draft, {
+        problems: stageHasProblems(turn),
+        request: ctx.request.type,
+        hintLevel: ctx.request.type === 'hint' ? ctx.hintLevel : undefined,
+      });
 
     // Hint 3 is three choices from the lesson brief. The model does not write them.
     if (ctx.request.type === 'hint' && ctx.hintLevel === 3 && !ruleSafetyReply(ctx)) {
@@ -189,7 +209,7 @@ export class ProviderRegistry {
     }
 
     if (provider.demo) {
-      const draft = stamp(await this.attempt((s) => provider.sendTurn(turn, s), validateTutorDraft, opts));
+      const draft = stamp(tone(await this.attempt((s) => provider.sendTurn(turn, s), validateTutorDraft, opts)));
       return { draft, demo: true, provider: 'demo' };
     }
 
@@ -225,12 +245,12 @@ export class ProviderRegistry {
       if (/\b(toy car|pendulum|ramp)\b/i.test(`${draft.text} ${draft.questions.join(' ')}`)) {
         throw new ProviderError('Reply invented a different experiment', true, 'invalid_output');
       }
-      return { draft: stamp(draft), demo: false, provider: 'deepseek' };
+      return { draft: stamp(tone(draft)), demo: false, provider: 'deepseek' };
     } catch (err) {
       const code = err instanceof ProviderError ? err.code : 'unavailable';
       if (code === 'budget' || code === 'invalid_output') {
         log.warn('tutor_fallback_to_demo', { reason: code });
-        const draft = stamp(validateTutorDraft(await this.demo.sendTurn(turn)));
+        const draft = stamp(tone(validateTutorDraft(await this.demo.sendTurn(turn))));
         return { draft, demo: true, provider: 'demo', fallback: code === 'budget' ? 'budget' : 'invalid_output' };
       }
       throw err;
@@ -316,8 +336,10 @@ export class ProviderRegistry {
           out.push({ id: box.id, passed: true, question: '', source: 'ai', answerKey: key, reviewedAt });
           continue;
         }
-        let question = guardQuestions(review.feedbackQuestions, { plan: ctx.plan, stage: ctx.stage })[0];
-        if (!question) question = easy.feedbackQuestions[0] ?? GENERIC_QUESTION[ctx.stage];
+        let question = safeFailQuestion(
+          guardQuestions(review.feedbackQuestions, { plan: ctx.plan, stage: ctx.stage })[0],
+          easy.feedbackQuestions[0] ?? GENERIC_QUESTION[ctx.stage],
+        );
         out.push({ id: box.id, passed: false, question, source: 'ai', answerKey: key, reviewedAt });
       } catch (err) {
         const code = err instanceof ProviderError ? err.code : 'unavailable';
@@ -363,8 +385,8 @@ export class ProviderRegistry {
     try {
       const review = await this.attempt((s) => provider.reviewPlan({ ...ctx, lessonText }, s), validateStageReview, { deadline });
       if (review.passed) return { passed: true, feedbackQuestions: [], source: 'ai' };
-      let questions = guardQuestions(review.feedbackQuestions, { plan: ctx.plan, stage: ctx.stage });
-      if (!questions.length) questions = heuristicStageReview(ctx.plan, ctx.stage).feedbackQuestions;
+      let questions = guardQuestions(review.feedbackQuestions, { plan: ctx.plan, stage: ctx.stage }).filter((q) => !containsGood(q));
+      if (!questions.length) questions = heuristicStageReview(ctx.plan, ctx.stage).feedbackQuestions.filter((q) => !containsGood(q));
       if (!questions.length) questions = [GENERIC_QUESTION[ctx.stage]];
       return { passed: false, feedbackQuestions: questions, source: 'ai' };
     } catch (err) {

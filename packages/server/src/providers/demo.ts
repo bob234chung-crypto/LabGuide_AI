@@ -1,4 +1,4 @@
-import { STAGE_TITLES, heuristicStageReview, type AppStage, type Issue } from '@labguide/shared';
+import { STAGE_TITLES, heuristicStageReview, notYetReply, type AppStage } from '@labguide/shared';
 import { hintChoices, hintQuestions } from '../lessons.js';
 import type { PlanReview, ProviderHealth, StageReviewContext, TutorDraft, TutorProvider, TutorTurnContext } from './types.js';
 
@@ -37,7 +37,7 @@ const GREETINGS: Record<AppStage, { text: string; questions: string[] }> = {
   },
 };
 
-/** Hint 1 and hint 2 when no lesson brief exists. Guiding questions only. No other experiment. */
+/** Hint 1 and hint 2 when no lesson brief exists. Guiding questions only. They never say the idea is correct. */
 const HINTS: Record<AppStage, [string, string]> = {
   theme: [
     'Think about which topic you find most interesting.',
@@ -97,10 +97,6 @@ const GLOSSARY_WORDS: Record<string, string> = {
   precise: 'A precise tool gives readings with small scale divisions.',
   apparatus: 'Apparatus is the equipment you use in an experiment.',
 };
-
-function asQuestion(issue: Issue): { statement?: string; question?: string } {
-  return issue.message.trim().endsWith('?') ? { question: issue.message } : { statement: issue.message };
-}
 
 function safetyReply(stage: AppStage, block: { message: string; hazard?: string; alternative?: string }): TutorDraft {
   return {
@@ -222,7 +218,7 @@ export class DemoAdapter implements TutorProvider {
       }
     }
 
-    // 'check' or a general message: specific praise + up to 2 guiding questions.
+    // 'check' or a general message. Praise only when this stage has no problems.
     const stageIssues =
       stage === 'diagram'
         ? diagramChecks
@@ -234,27 +230,19 @@ export class DemoAdapter implements TutorProvider {
         ? diagramChecks.filter((c) => c.passed && c.severity !== 'info').map((c) => c.message)
         : validation.stages[stage].praise;
 
-    const statements: string[] = [];
-    const questions: string[] = [];
-    if (praise[0]) statements.push(praise[0]);
-    for (const issue of stageIssues) {
-      const q = asQuestion(issue);
-      if (q.question && questions.length < 2) questions.push(q.question);
-      else if (q.statement && statements.length < 3) statements.push(q.statement);
-      if (questions.length >= 2) break;
+    if (stageIssues.length) {
+      return { kind: 'socratic', text: notYetReply(stageIssues[0].message), questions: [] };
     }
-    if (!stageIssues.length) {
-      statements.push(
-        stage === 'diagram'
-          ? 'Your diagram passes the checks. You can generate the labelled diagram.'
-          : `Your ${STAGE_TITLES[stage as keyof typeof STAGE_TITLES].toLowerCase()} looks complete. You can move on.`,
-      );
-      if (praise.length < 1) questions.push('Can you explain your thinking to a classmate?');
-    }
+    const specific = (praise[0] ?? '').replace(/^good\.\s*/i, '').trim();
+    const done =
+      specific ||
+      (stage === 'diagram'
+        ? 'Your diagram passes the checks. You can generate the labelled diagram.'
+        : `You finished your ${STAGE_TITLES[stage as keyof typeof STAGE_TITLES].toLowerCase()}.`);
     return {
-      kind: stageIssues.length ? 'socratic' : 'praise',
-      text: statements.join(' '),
-      questions,
+      kind: 'praise',
+      text: `Good. ${done.endsWith('.') ? done : `${done}.`}`,
+      questions: praise.length ? [] : ['Can you explain your thinking to a classmate?'],
     };
   }
 

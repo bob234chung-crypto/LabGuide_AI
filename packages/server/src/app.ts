@@ -14,6 +14,7 @@ import {
   hasSafetyBlock,
   isAppStageUnlocked,
   isReviewedStage,
+  notYetReply,
   reviewsNeededFor,
   safetyChecklist,
   sanitizeScene,
@@ -211,12 +212,12 @@ export function createApp(
           stage,
           kind: 'socratic',
           text: [
-            'Not yet. Look at the cards marked Not yet.',
+            notYetReply(review.feedbackQuestions[0] || 'Look at the card marked Not yet.'),
             review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
           ]
             .filter(Boolean)
             .join(' '),
-          questions: review.feedbackQuestions,
+          questions: review.feedbackQuestions.filter((q) => !/\bgood\b/i.test(q)),
           demo: false,
           provider: review.source === 'ai' ? 'deepseek' : 'rules',
           createdAt: now(),
@@ -234,12 +235,12 @@ export function createApp(
           stage,
           kind: 'socratic',
           text: [
-            `Not yet. Your whole plan needs a little more work before you move on. Think about ${review.feedbackQuestions.length > 1 ? 'these questions' : 'this question'}.`,
+            notYetReply(review.feedbackQuestions[0] || 'Look at the part of your plan that still needs work.'),
             review.fallbackReason ? REVIEW_FALLBACK_NOTE[review.fallbackReason] : '',
           ]
             .filter(Boolean)
             .join(' '),
-          questions: review.feedbackQuestions,
+          questions: review.feedbackQuestions.filter((q) => !/\bgood\b/i.test(q)),
           demo: false,
           provider: review.source === 'ai' ? 'deepseek' : 'rules',
           createdAt: now(),

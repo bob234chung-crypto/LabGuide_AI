@@ -1,5 +1,12 @@
-import { boxAnswerKey, type ReviewFallbackReason, type ReviewedStage } from '@labguide/shared';
+import { boxAnswerKey, goodCardReply, notYetReply, type AnswerBoxKind, type ReviewFallbackReason, type ReviewedStage } from '@labguide/shared';
 import { useSession } from '../session';
+
+function kindFor(stage: ReviewedStage, boxId: string): AnswerBoxKind {
+  if (boxId === 'hypothesis' || boxId === 'independent' || boxId === 'dependent') return boxId;
+  if (stage === 'apparatus') return 'justification';
+  if (stage === 'procedure') return 'step';
+  return 'controlled';
+}
 
 const NOTES: Record<ReviewFallbackReason, string> = {
   not_configured: 'Checked with LabGuide’s built-in checks (Demo mode).',
@@ -18,17 +25,14 @@ export function BoxResult({ stage, boxId, text }: { stage: ReviewedStage; boxId:
   if (box.passed) {
     return (
       <p className="box-ok" role="status" data-box-result="ok">
-        OK
+        {goodCardReply(kindFor(stage, boxId), text)}
       </p>
     );
   }
   return (
     <div className="issue issue-hint box-result" role="status" data-box-result="not-yet">
-      <span className="tag">Not yet</span>
-      <div>
-        <p style={{ margin: 0 }}>{box.question}</p>
-        {box.fallbackReason && <p className="hint-text" style={{ margin: '0.35rem 0 0' }}>{NOTES[box.fallbackReason]}</p>}
-      </div>
+      <p style={{ margin: 0 }}>{notYetReply(box.question)}</p>
+      {box.fallbackReason && <p className="hint-text" style={{ margin: '0.35rem 0 0' }}>{NOTES[box.fallbackReason]}</p>}
     </div>
   );
 }

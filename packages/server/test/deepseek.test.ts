@@ -174,7 +174,7 @@ describe('DeepSeek tutor turns', () => {
     expect(user.trim().endsWith('</student_data>')).toBe(true);
   });
 
-  it('repairs a reply with too many questions down to 3', async () => {
+  it('does not say Good when a check still has problems', async () => {
     const c = makeClient();
     await c.init();
     const id = await c.session();
@@ -182,7 +182,8 @@ describe('DeepSeek tutor turns', () => {
     const r = await c.post(`/api/sessions/${id}/chat`, { type: 'check', stage: 'theme' });
     const reply = r.body.messages.at(-1);
     expect(reply.provider).toBe('deepseek');
-    expect(reply.questions).toEqual(['One?', 'Two?', 'Three?']);
+    expect(reply.text.startsWith('Not yet.')).toBe(true);
+    expect(`${reply.text} ${reply.questions.join(' ')}`).not.toMatch(/\bGood\b/);
   });
 
   it('falls back to the labelled safe template when the output fails the schema', async () => {
@@ -211,7 +212,8 @@ describe('DeepSeek tutor turns', () => {
     let r = await c.post(`/api/sessions/${id}/chat`, { type: 'check', stage: 'hypothesis' });
     let reply = r.body.messages.at(-1);
     expect(reply.provider).toBe('deepseek');
-    expect(reply.text).toBe('You are on the right track.');
+    expect(reply.text.startsWith('Not yet.')).toBe(true);
+    expect(JSON.stringify(reply)).not.toMatch(/\bGood\b/);
     expect(JSON.stringify(reply)).not.toMatch(/light intensity increases/);
 
     const steps = {
@@ -587,12 +589,70 @@ describe('stage gating', () => {
     expect(boxes).toHaveLength(4);
     expect(boxes.find((b: { id: string }) => b.id === 'independent')).toMatchObject({ passed: true, source: 'heuristic' });
     expect(boxes.find((b: { id: string }) => b.id === 'dependent')).toMatchObject({ passed: false, source: 'ai', question: 'What will you look at?' });
+    const failedReply = `${r.body.messages[0].text} ${r.body.messages[0].questions.join(' ')}`;
+    expect(r.body.messages[0].text.startsWith('Not yet.')).toBe(true);
+    expect(failedReply).not.toMatch(/\bGood\b/);
     expect(c.ds.completions()).toHaveLength(1);
     expect(c.ds.completions()[0].body.messages[1].content).toMatch(/dependent variable/);
     expect(c.ds.completions()[0].body.messages[1].content).toMatch(/Rate of photosynthesis/);
     const again = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'apparatus' });
     expect(again.status).toBe(409);
     expect(c.ds.completions()).toHaveLength(1);
+  });
+
+  it('a failed card reply does not contain Good, even if the model praises it', async () => {
+    const c = makeClient();
+    await c.init();
+    const id = await c.session();
+    await fill(c, id, 'hypothesis');
+    await c.put(`/api/sessions/${id}/stages/variables`, {
+      value: {
+        independent: 'Distance of the lamp',
+        dependent: 'pizza please',
+        controlled: [
+          { id: 'a', text: 'Temperature of water' },
+          { id: 'b', text: 'Type of pondweed' },
+        ],
+      },
+    });
+    c.ds.reply({ content: { passed: false, feedbackQuestions: ['Good. You will look at pizza?'] } });
+    const r = await c.put(`/api/sessions/${id}/progress`, { currentStage: 'apparatus' });
+    expect(r.status).toBe(409);
+    const box = r.body.session.stageReviews.variables.boxes.find((b: { id: string }) => b.id === 'dependent');
+    expect(box.passed).toBe(false);
+    expect(box.question).not.toMatch(/\bGood\b/);
+    expect(box.question).not.toMatch(/pizza/i);
+    const reply = r.body.messages[0];
+    expect(reply.text.startsWith('Not yet.')).toBe(true);
+    expect(`${reply.text} ${reply.questions.join(' ')}`).not.toMatch(/\bGood\b/);
+    expect(r.body.session.plan.variables.dependent).toBe('pizza please');
+  });
+
+  it('hint 1 does not keep praise of a wrong idea', async () => {
+    const c = makeClient();
+    await c.init();
+    const id = await c.session();
+    await fill(c, id, 'hypothesis');
+    c.ds.reply({
+      content: { kind: 'hint', text: 'Good. You will change the pizza.', questions: ['Good. Is pizza the variable?'] },
+    });
+    const r = await c.post(`/api/sessions/${id}/chat`, { type: 'hint', stage: 'variables' });
+    const reply = r.body.messages.at(-1);
+    expect(reply.hintLevel).toBe(1);
+    expect(`${reply.text} ${reply.questions.join(' ')}`).not.toMatch(/\bGood\b/);
+    expect(reply.text).toMatch(/made a start|Think about/);
+    expect(c.ds.completions()[0].body.messages[0].content).toMatch(/The word Good must not appear/);
+  });
+
+  it('the demo tutor does not say Good about a stage that has not passed', async () => {
+    const c = makeClient({ key: null });
+    await c.init();
+    const id = await c.session();
+    const r = await c.post(`/api/sessions/${id}/chat`, { type: 'check', stage: 'variables' });
+    const reply = r.body.messages.at(-1);
+    expect(reply.demo).toBe(true);
+    expect(reply.text.startsWith('Not yet.')).toBe(true);
+    expect(`${reply.text} ${reply.questions.join(' ')}`).not.toMatch(/\bGood\b/);
   });
 
   it('uses the fixed check for later cards when DeepSeek fails', async () => {

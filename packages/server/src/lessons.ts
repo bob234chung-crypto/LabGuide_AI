@@ -10,7 +10,7 @@ export interface LessonBrief {
   practical: string;
   aim: string;
   fairTest: string;
-  /** What a good answer names. Not the wording of the answer. */
+  /** What the answer names. Not the wording of the answer. */
   names: string;
   control: string;
   safety: string;
@@ -58,14 +58,14 @@ const WHY: Record<AppStage, { vague: string; notTest: string }> = {
 };
 
 const STAGE_LINE: Record<AppStage, string> = {
-  theme: 'On this stage a good answer names the practical the student will do.',
-  hypothesis: 'On this stage a good answer names what is changed and what is looked at.',
-  variables: 'On this stage a good answer names what is changed, what is looked at, and what stays the same.',
-  apparatus: 'On this stage a good answer names the equipment and what it is for.',
-  procedure: 'On this stage a good answer names the steps of this practical.',
-  safety: 'On this stage a good answer names the danger and the safe way in the school lab.',
-  summary: 'On this stage a good answer shows the plan is the same practical from start to end.',
-  diagram: 'On this stage a good answer shows the setup for this practical, with labels.',
+  theme: 'On this stage the answer names the practical the student will do.',
+  hypothesis: 'On this stage the answer names what is changed and what is looked at.',
+  variables: 'On this stage the answer names what is changed, what is looked at, and what stays the same.',
+  apparatus: 'On this stage the answer names the equipment and what it is for.',
+  procedure: 'On this stage the answer names the steps of this practical.',
+  safety: 'On this stage the answer names the danger and the safe way in the school lab.',
+  summary: 'On this stage the answer shows the plan is the same practical from start to end.',
+  diagram: 'On this stage the answer shows the setup for this practical, with labels.',
 };
 
 function lesson(
@@ -81,7 +81,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Rate of photosynthesis',
       aim: 'See how light changes how fast a water plant makes oxygen bubbles.',
       fairTest: 'Change only the lamp distance. Keep the same plant, the same water and the same time.',
-      names: 'A good answer names the lamp distance and the bubbles.',
+      names: 'It names the lamp distance and the bubbles.',
       control: 'The plant, the water and the time stay the same.',
       safety: 'School lab only, with a teacher. Do not do this at home. Keep the lamp and the glass on the bench.',
     },
@@ -101,7 +101,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Enzyme activity',
       aim: 'See how temperature changes the foam from potato and hydrogen peroxide.',
       fairTest: 'Change only the temperature. Keep the same amount of potato and the same peroxide.',
-      names: 'A good answer names the temperature and the foam.',
+      names: 'It names the temperature and the foam.',
       control: 'The amount of potato and the peroxide stay the same.',
       safety: 'School lab only, with a teacher. Do not do this at home. Wear eye protection. The teacher handles the peroxide.',
     },
@@ -121,7 +121,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Rate of dissolving',
       aim: 'See how water temperature changes how fast sugar dissolves.',
       fairTest: 'Change only the water temperature. Keep the same amount of sugar and the same stirring.',
-      names: 'A good answer names the water temperature and the time to dissolve.',
+      names: 'It names the water temperature and the time to dissolve.',
       control: 'The amount of sugar and the stirring stay the same.',
       safety: 'School lab only, with a teacher. Do not do this at home. The teacher provides hot water.',
     },
@@ -141,7 +141,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Thermal insulation',
       aim: 'See how cotton wool changes how fast hot water cools.',
       fairTest: 'Change only the cotton wool. Keep the same amount of water and the same starting temperature.',
-      names: 'A good answer names the cotton wool and the water temperature.',
+      names: 'It names the cotton wool and the water temperature.',
       control: 'The amount of water and the starting temperature stay the same.',
       safety: 'School lab only, with a teacher. Do not do this at home. The teacher provides the hot water.',
     },
@@ -161,7 +161,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Iodine test for starch',
       aim: 'See the colour of iodine on a starch spot and on a water spot.',
       fairTest: 'Use the same iodine and the same tile. Change only the spot: starch or water.',
-      names: 'A good answer names the spot and the colour of the iodine.',
+      names: 'It names the spot and the colour of the iodine.',
       control: 'The water spot is the control. It has no starch.',
       safety: 'School lab only, with a teacher. Do not do this at home. Do not drink the iodine.',
     },
@@ -181,7 +181,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Starch in a green leaf',
       aim: 'Test a green leaf to see if it has starch.',
       fairTest: 'Use the same iodine and the same steps for the leaf you test.',
-      names: 'A good answer names the green leaf and the starch test.',
+      names: 'It names the green leaf and the starch test.',
       control: 'There is no second leaf in this test. The iodine colour shows if starch is there.',
       safety: 'School lab only, with a teacher. Heat alcohol only in hot water, with the burner off and away. Do not do this at home.',
     },
@@ -201,7 +201,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Oxygen from a water plant',
       aim: 'Collect the gas from a water plant in bright light and test it.',
       fairTest: 'Keep the light bright and use the same water plant. The teacher tests the gas.',
-      names: 'A good answer names the water plant and the gas test.',
+      names: 'It names the water plant and the gas test.',
       control: 'The light stays bright. The same plant is used.',
       safety: 'School lab only, with a teacher. The glowing splint is a teacher demonstration. Do not do this at home.',
     },
@@ -221,7 +221,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Is light needed?',
       aim: 'See if the part of a leaf in the light has starch, and if the covered part does not.',
       fairTest: 'Use the same leaf and the same time. Change only the light: one part covered, one part in the light.',
-      names: 'A good answer names light and starch.',
+      names: 'It names light and starch.',
       control: 'The covered part of the same leaf is the control. It gets no light.',
       safety: 'School lab only, with a teacher. The teacher destarches the plant before the lesson. That is not a step at home. Heat alcohol only in hot water, with the burner off.',
     },
@@ -241,7 +241,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Is chlorophyll needed?',
       aim: 'See if the green part of a variegated leaf has starch, and if the white part does not.',
       fairTest: 'Use the same leaf and the same light. Compare the green part with the white part.',
-      names: 'A good answer names chlorophyll, or the green part, and starch.',
+      names: 'It names chlorophyll, or the green part, and starch.',
       control: 'The white part of the same leaf is the control. It has no chlorophyll.',
       safety: 'School lab only, with a teacher. The teacher destarches the plant before the lesson. That is not a step at home. Heat alcohol only in hot water, with the burner off.',
     },
@@ -261,7 +261,7 @@ const LESSONS: Record<Exclude<ThemeId, 'custom'>, Lesson> = {
       practical: 'Is carbon dioxide needed?',
       aim: 'See if a leaf in normal air has starch, and if a leaf with no carbon dioxide does not.',
       fairTest: 'Keep the same light. Change only the carbon dioxide around one leaf.',
-      names: 'A good answer names carbon dioxide and starch.',
+      names: 'It names carbon dioxide and starch.',
       control: 'The leaf in normal air is the control. It has carbon dioxide.',
       safety: 'School lab only, with a teacher. Soda lime is corrosive: the teacher handles it. Students wear eye protection and do not touch it. Do not do this at home.',
     },
@@ -295,7 +295,7 @@ export function formatLesson(theme: ThemeId | null | undefined, stage: AppStage)
     `Practical: ${brief.practical}`,
     `Aim: ${brief.aim}`,
     `Fair test: ${brief.fairTest}`,
-    `A good S1–S2 answer names: ${brief.names}`,
+    `What a complete S1–S2 answer includes: ${brief.names}`,
     `Control: ${brief.control}`,
     `Safety: ${brief.safety}`,
     STAGE_LINE[stage],
